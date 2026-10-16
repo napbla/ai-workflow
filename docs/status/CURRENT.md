@@ -4,15 +4,15 @@ Updated: 2026-10-16
 
 ## Current Objective
 
-Add a minimal `--version` flag to the initializer while keeping `spec/VERSION` as the single protocol-version source of truth.
+The initializer `--version` flag (reports the protocol version from `spec/VERSION`) is implemented in PR #1 and awaiting final review and merge. No further objective is set.
 
 ## Active Changes
 
-- `docs/changes/add-init-version-flag/CHANGE.md` — Verifying, owned by `claude-code`. Implemented on branch `add-init-version-flag`; awaiting PR and review.
+- None.
 
 ## Human Attention
 
-- `claude-code` could not reach `origin` (SSH `Permission denied (publickey)` for host `github-personal`) and `gh` is not installed, so the branch is not pushed and no PR exists yet. Operator: load the `GithubPersonal` key into ssh-agent (or push the branch) so the PR can be opened.
+- PR #1 (`add-init-version-flag`) is ready for re-review and a merge decision.
 
 ## Blockers / Risks
 
@@ -20,8 +20,8 @@ Add a minimal `--version` flag to the initializer while keeping `spec/VERSION` a
 
 ## Next
 
-- Push `add-init-version-flag` and open a PR; Codex reviews.
-- Before merge, remove `docs/changes/add-init-version-flag/`.
+- Review and merge PR #1.
+- Operator sets the next objective.
 
 ## Current Truth References
 
