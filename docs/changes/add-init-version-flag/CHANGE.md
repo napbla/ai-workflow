@@ -1,6 +1,6 @@
 # Add Initializer --version Flag
 
-Status: Planned
+Status: Verifying
 Owner: claude-code
 
 ## Goal
@@ -16,11 +16,15 @@ Add a standard `--version` flag to the initializer that reports the protocol ver
 
 ## Acceptance Criteria
 
-- [ ] `python init/init.py --version` exits with status 0.
-- [ ] Output is `ai-workflow protocol v<version>`, using the value from `spec/VERSION`.
-- [ ] Running `--version` creates or modifies no project files.
-- [ ] Relevant automated test coverage is added.
+- [x] `python init/init.py --version` exits with status 0.
+- [x] Output is `ai-workflow protocol v<version>`, using the value from `spec/VERSION`.
+- [x] Running `--version` creates or modifies no project files.
+- [x] Relevant automated test coverage is added.
 
 ## Notes
 
 This is a low-risk CLI feature. No protocol version bump is required because repository protocol semantics are unchanged.
+
+Implemented as a small custom `argparse` action rather than `action="version"` so `spec/VERSION` is read only when `--version` is passed; a missing file still fails with the existing `Failed to load protocol` message (exit 2) instead of a traceback on every invocation. Tests: `python -m unittest discover -s init/tests`.
+
+Before merge: remove this directory (behavior is documented in `init/README.md` and covered by `init/tests/`).

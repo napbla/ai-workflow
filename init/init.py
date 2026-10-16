@@ -141,8 +141,24 @@ def collect_agents(roles: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     return agents
 
 
+class ProtocolVersionAction(argparse.Action):
+    """Print the protocol version and exit; reads spec/VERSION only when invoked."""
+
+    def __init__(self, option_strings: list[str], dest: str, **kwargs: Any) -> None:
+        super().__init__(option_strings, dest, nargs=0, default=argparse.SUPPRESS, **kwargs)
+
+    def __call__(self, parser: argparse.ArgumentParser, namespace: argparse.Namespace, values: Any, option_string: str | None = None) -> None:
+        try:
+            version = protocol_version()
+        except OSError as exc:
+            parser.exit(2, f"Failed to load protocol: {exc}\n")
+        print(f"ai-workflow protocol v{version}")
+        parser.exit()
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Initialize an ai-workflow project from the local protocol spec.")
+    parser.add_argument("--version", action=ProtocolVersionAction, help="Show the protocol version shipped with this checkout and exit")
     target_group = parser.add_mutually_exclusive_group()
     target_group.add_argument("--target", type=Path, help="Target repository directory (default: current directory)")
     target_group.add_argument("--self", action="store_true", help="Initialize the ai-workflow monorepo itself")
