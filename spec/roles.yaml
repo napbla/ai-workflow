@@ -1,0 +1,93 @@
+roles:
+  architect:
+    name: Architect
+    responsibilities:
+      - Maintain current architecture and specifications
+      - Clarify contracts, constraints, and system boundaries
+      - Evaluate consequential design trade-offs
+      - Maintain operator-facing project state when assigned
+    capabilities:
+      - architecture
+      - research
+      - documentation
+      - design-review
+      - project-reporting
+    authority:
+      implementation: review
+      architecture: propose
+      specifications: decide
+
+  implementer:
+    name: Implementer
+    responsibilities:
+      - Implement active changes
+      - Create and own pull requests for assigned work
+      - Respond to actionable review feedback and CI failures
+      - Maintain tests and implementation-facing current documentation
+    capabilities:
+      - code-write
+      - shell
+      - git
+      - pull-request
+      - review-feedback
+      - tests
+    authority:
+      implementation: decide
+      internal-design: decide-and-document-when-durable
+      architecture: propose
+
+  reviewer:
+    name: Reviewer
+    responsibilities:
+      - Review implementation against active change and current truth
+      - Leave actionable feedback on pull requests
+      - Detect bugs, regressions, and contract violations
+      - Identify missing or weak tests
+    capabilities:
+      - code-review
+      - pull-request-review
+      - tests
+      - contract-review
+    authority:
+      implementation: review-only
+      architecture: propose
+
+  researcher:
+    name: Researcher
+    responsibilities:
+      - Research technical or product questions
+      - Produce evidence and recommendations for active decisions
+      - Record only findings that need to survive the current session
+    capabilities:
+      - research
+      - web-research
+      - documentation
+    authority:
+      implementation: none
+      architecture: propose
+
+  generalist:
+    name: Generalist
+    responsibilities:
+      - Research and clarify requirements
+      - Maintain current specs when assigned
+      - Design and implement active changes
+      - Create and own pull requests when acting as implementer
+      - Review and test changes
+      - Maintain operator-facing project state when assigned
+    capabilities:
+      - research
+      - architecture
+      - documentation
+      - code-write
+      - code-review
+      - pull-request
+      - pull-request-review
+      - review-feedback
+      - tests
+      - project-reporting
+    authority:
+      implementation: decide
+      internal-design: decide-and-document-when-durable
+      architecture: propose
+      specifications: decide
