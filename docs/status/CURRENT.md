@@ -4,11 +4,11 @@ Updated: 2026-10-16
 
 ## Current Objective
 
-Not set.
+Add a minimal `--version` flag to the initializer while keeping `spec/VERSION` as the single protocol-version source of truth.
 
 ## Active Changes
 
-- None.
+- `docs/changes/add-init-version-flag/CHANGE.md` — Planned, owned by `claude-code`.
 
 ## Human Attention
 
@@ -20,7 +20,7 @@ Not set.
 
 ## Next
 
-- Define the current objective or first active change.
+- Claude Code implements the active change and adds relevant test coverage.
 
 ## Current Truth References
 
