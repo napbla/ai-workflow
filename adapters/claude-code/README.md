@@ -11,7 +11,9 @@ It blocks (exit code 2, reason returned to Claude):
 
 Normal feature-branch pushes such as `git push -u origin feature/<change-id>` are allowed. Commands are checked through `&&`, `;`, pipes, newlines, and `sh/bash/zsh -c`. Quoted strings and heredoc bodies are treated as data, so commit messages and PR bodies that mention `main` or `develop` are not blocked.
 
-This is best-effort parsing of shell text, not a security boundary: variables, aliases, or scripts can evade it. Repository-host branch protection is the authoritative layer.
+Inline `git -c` settings that redirect a push (`remote.*.push`, `branch.*.merge`, `push.default=matching`, `remote.*.mirror`) are checked like `git config`. Heredocs fed to a shell (`bash <<EOF`) are checked as commands.
+
+This is best-effort parsing of shell text, not a security boundary: variables, aliases, scripts, and backtick substitutions can evade it. Repository-host branch protection is the authoritative layer.
 
 ## Install
 

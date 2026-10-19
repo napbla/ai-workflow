@@ -66,19 +66,54 @@ def current_branch(cwd: str | None) -> str | None:
     return name or None
 
 
-def strip_heredoc_bodies(command: str) -> str:
-    """Drop heredoc bodies (data such as commit messages), keeping the command lines."""
+def unquoted_positions(line: str, quote: str | None) -> tuple[set[int], str | None]:
+    """Indexes of `line` outside shell quotes, and the quote still open at its end."""
+    positions: set[int] = set()
+    escaped = False
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+        elif quote == "'":
+            quote = None if char == "'" else quote
+        elif quote == '"':
+            if char == "\\":
+                escaped = True
+            elif char == '"':
+                quote = None
+        elif char == "\\":
+            escaped = True
+        elif char in "'\"":
+            quote = char
+        else:
+            positions.add(index)
+    return positions, quote
+
+
+def strip_heredoc_bodies(command: str) -> tuple[str, list[str]]:
+    """Drop heredoc bodies (data such as commit messages), keeping the command lines.
+
+    Returns the remaining text and the bodies fed to a shell (`bash <<EOF`), which are commands.
+    """
     kept: list[str] = []
-    pending: list[tuple[str, bool]] = []
+    shell_bodies: list[str] = []
+    pending: list[tuple[str, bool, bool, list[str]]] = []
+    quote: str | None = None
     for line in command.split("\n"):
         if pending:
-            delimiter, strip_tabs = pending[0]
+            delimiter, strip_tabs, is_shell, body = pending[0]
             if (line.lstrip("\t") if strip_tabs else line) == delimiter:
                 pending.pop(0)
+                if is_shell:
+                    shell_bodies.append("\n".join(body))
+            else:
+                body.append(line)
             continue
         kept.append(line)
-        pending = [(m.group(3), m.group(1) == "-") for m in HEREDOC.finditer(line)]
-    return "\n".join(kept)
+        unquoted, quote = unquoted_positions(line, quote)
+        words = line.split()
+        is_shell = bool(words) and os.path.basename(words[0]) in SHELLS
+        pending = [(m.group(3), m.group(1) == "-", is_shell, []) for m in HEREDOC.finditer(line) if m.start() in unquoted]
+    return "\n".join(kept), shell_bodies
 
 
 def tokenize(text: str) -> list[str]:
@@ -90,7 +125,10 @@ def tokenize(text: str) -> list[str]:
 
 def split_commands(command: str) -> list[list[str]]:
     """Split a shell string into simple commands (token lists)."""
-    text = strip_heredoc_bodies(command.replace("\\\n", " "))
+    text, shell_bodies = strip_heredoc_bodies(command.replace("\\\n", " "))
+    commands: list[list[str]] = []
+    for body in shell_bodies:
+        commands.extend(split_commands(body))
     try:
         chunks = [tokenize(text)]
     except ValueError:
@@ -101,7 +139,6 @@ def split_commands(command: str) -> list[list[str]]:
                 chunks.append(tokenize(line))
             except ValueError:
                 continue
-    commands: list[list[str]] = []
     for tokens in chunks:
         current: list[str] = []
         for token in tokens:
@@ -180,6 +217,8 @@ def check_branch(args: list[str]) -> str | None:
             return check_upstream_value(arg.split("=", 1)[1])
         if arg in {"-u", "--set-upstream-to"} and index + 1 < len(args):
             return check_upstream_value(args[index + 1])
+        if arg.startswith("-u") and len(arg) > 2:
+            return check_upstream_value(arg[2:])
     return check_tracking_start_point(args, {"-t", "--track"})
 
 
@@ -215,9 +254,13 @@ def check_checkout(args: list[str], create_flags: set[str]) -> str | None:
 
 def check_config(args: list[str]) -> str | None:
     positionals = [arg for arg in args if not arg.startswith("-")]
+    if positionals[:1] in (["set"], ["add"]):
+        positionals = positionals[1:]
     if len(positionals) < 2:
         return None
     key, value = positionals[0].lower(), positionals[1]
+    if key.startswith("remote.") and key.endswith(".mirror") and value.lower() in {"true", "yes", "on", "1"}:
+        return "remote mirroring would push every ref, including protected branches"
     if key == "push.default" and value == "matching":
         return "push.default=matching would let a plain `git push` update protected branches"
     if key.startswith("branch.") and key.endswith(".merge"):
@@ -236,8 +279,14 @@ def check_git(args: list[str], cwd: str | None) -> str | None:
         option = args[index]
         if option == "-C" and index + 1 < len(args):
             cwd = os.path.join(cwd or os.getcwd(), args[index + 1])
-        if option == "-c" and index + 1 < len(args) and args[index + 1].lower().startswith("push.default="):
-            push_default = args[index + 1].split("=", 1)[1]
+        if option == "-c" and index + 1 < len(args):
+            # Inline config (e.g. remote.origin.push=HEAD:main) can redirect a push.
+            key, _, value = args[index + 1].partition("=")
+            reason = check_config([key, value])
+            if reason:
+                return f"inline config: {reason}"
+            if key.lower() == "push.default":
+                push_default = value
         index += 2 if option in GIT_GLOBAL_WITH_VALUE else 1
     if index >= len(args):
         return None

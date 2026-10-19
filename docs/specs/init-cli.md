@@ -19,7 +19,7 @@ Without `--version`, the initializer prompts interactively, then writes the prot
 1. **Project name** — default: the target directory name, or `ai-workflow` with `--self`.
 2. **Roles to configure** — comma-separated role IDs from the roles file; default `architect,implementer,reviewer` (those present in the roles file, otherwise all roles). Unknown IDs are reported and the prompt repeats; duplicates are ignored.
 
-Each selected role produces `.agents/<role-id>.md`, and `AGENTS.md` lists the roles. Role IDs must match `[a-z0-9][a-z0-9-]*`; a roles file with other keys fails with `Failed to load protocol` (exit 2). No runtime or vendor names are written.
+Each selected role produces `.agents/<role-id>.md`, and `AGENTS.md` lists the roles. Role IDs must be strings matching `[a-z0-9][a-z0-9-]*` (quote numeric IDs in YAML); a roles file with other keys fails with `Failed to load protocol` (exit 2). No runtime or vendor names are written.
 
 ## `--version`
 

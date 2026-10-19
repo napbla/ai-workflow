@@ -119,7 +119,29 @@ class DeniedCommandsTest(RepoTestCase):
         self.assertAllowed("git push origin feature/x")
 
     def test_commands_after_heredoc_are_still_checked(self) -> None:
-        self.assertDenied("cat > msg <<'EOF'\nnotes\nEOF\ngit push origin main")
+        for command in [
+            "cat > msg <<'EOF'\nnotes\nEOF\ngit push origin main",
+            'git commit -m "fix <<EOF parsing"\ngit push origin main',
+            "echo 'a <<EOF'\ngit push origin develop",
+            "bash <<'EOF'\ngit push origin main\nEOF",
+        ]:
+            self.assertDenied(command)
+
+    def test_inline_config_redirecting_push_is_denied(self) -> None:
+        for command in [
+            "git -c remote.origin.push=HEAD:refs/heads/main push origin",
+            "git -c branch.feature/x.merge=refs/heads/develop push",
+            "git -c remote.origin.mirror=true push origin",
+            "git config set push.default matching",
+            "git config set branch.feature/x.merge refs/heads/main",
+            "git config remote.origin.mirror true",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git -c user.name=x push origin feature/x")
+
+    def test_attached_upstream_option_is_denied(self) -> None:
+        self.assertDenied("git branch -uorigin/develop")
+        self.assertAllowed("git branch -uorigin/feature/x")
 
     def test_compound_and_nested_commands_are_checked(self) -> None:
         for command in [

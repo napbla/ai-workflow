@@ -34,9 +34,9 @@ def load_roles(path: Path) -> dict[str, dict[str, Any]]:
     roles = data.get("roles")
     if not isinstance(roles, dict) or not roles:
         raise ValueError(f"No roles found in {path}")
-    invalid = [role_id for role_id in roles if not ROLE_ID_PATTERN.match(str(role_id))]
+    invalid = [role_id for role_id in roles if not isinstance(role_id, str) or not ROLE_ID_PATTERN.match(role_id)]
     if invalid:
-        raise ValueError(f"Invalid role IDs in {path}: {', '.join(map(str, invalid))} (use lowercase letters, digits, and hyphens)")
+        raise ValueError(f"Invalid role IDs in {path}: {', '.join(map(str, invalid))} (use lowercase letters, digits, and hyphens; quote numeric IDs in YAML)")
     return roles
 
 

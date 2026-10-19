@@ -76,6 +76,17 @@ class GeneratedProjectTest(unittest.TestCase):
             self.assertIn("Unknown role IDs: nope", result.stdout)
             self.assertEqual(sorted(p.name for p in (target / ".agents").iterdir()), ["generalist.md", "reviewer.md"])
 
+    def test_non_string_role_id_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            roles = Path(tmp) / "roles.yaml"
+            roles.write_text("roles:\n  123:\n    name: Numeric\n", encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(INIT_SCRIPT), "--target", str(Path(tmp) / "proj"), "--roles", str(roles)],
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Invalid role IDs", result.stderr)
+
     def test_self_bootstrap_matches_repository(self) -> None:
         repo_root = INIT_SCRIPT.parents[1]
         with tempfile.TemporaryDirectory() as tmp:
