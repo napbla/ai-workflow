@@ -4,23 +4,26 @@ Updated: 2026-10-19
 
 ## Current Objective
 
-No objective is in progress. The project uses protocol v2: role-based agent identities with runtimes assigned at invocation, `main` as the stable branch and `develop` as the integration branch with work on `feature/<change-id>` branches, autonomous change execution up to `ready-for-human-merge`, merge-safe current status, and GitHub branch protection of `main` and `develop` as the enforcement boundary, verified by `check/branch_protection.py`.
+Design a first-class Design PR lifecycle so consequential design can be reviewed and revised before implementation begins, while implementation PRs preserve one coherent accepted change identity.
 
 ## Active Changes
 
-- None.
+- `docs/changes/design-pr-lifecycle/CHANGE.md` — Designing, owned by the `architect` role.
+- `docs/changes/design-pr-lifecycle/DESIGN.md` — current proposal for human review.
 
 ## Human Attention
 
-- None.
+- Review and comment on the Design PR, especially the open questions around when Design PRs are required and whether design branches need their own naming convention.
 
 ## Blockers / Risks
 
-- None. `check/branch_protection.py`, run with the implementer's credential on 2026-10-19, exited 0: an active ruleset with no bypass actors requires a PR and blocks force pushes and deletion on both `main` and `develop`. Re-run it whenever agent credentials or rulesets change.
+- None. This branch is design-only; protocol implementation should not begin until the design is accepted.
 
 ## Next
 
-- Define the next objective as an active change on a feature branch from `develop`.
+- Human reviews/comments on the Design PR.
+- Architect explains trade-offs and revises the proposal in the same PR.
+- After acceptance, merge the Design PR and create a separate implementation change.
 
 ## Current Truth References
 
