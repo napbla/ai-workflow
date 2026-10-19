@@ -4,28 +4,32 @@ Updated: 2026-10-19
 
 ## Current Objective
 
-Define a first-class design phase for feature PRs so human-reviewed design guides implementation without merging future-state documentation ahead of the code that realizes it.
+Design the protocol distinction between target-state Design, implementation Change, and concrete source changes.
+
+## Active Designs
+
+- `docs/designs/design-change-source-lifecycle/DESIGN.md` — Proposed, owned by the `architect` role.
 
 ## Active Changes
 
-- `docs/changes/design-pr-lifecycle/CHANGE.md` — Designing, owned by the `architect` role.
-- `docs/changes/design-pr-lifecycle/DESIGN.md` — current design proposal.
+- None. This proposal intentionally separates Design from Change; implementation has not started.
 
 ## Human Attention
 
-- Confirm whether the revised design-phase model is accepted.
+- Confirm whether the revised `Design → Change → Source change` model is accepted.
 
 ## Blockers / Risks
 
-- Protocol implementation has not begun; the accepted design identity must be explicit before the change transitions to implementation.
+- Current protocol does not yet define `docs/designs/`; this branch is proposing that semantic and must not be treated as implemented protocol behavior until the design is accepted and a Change implements it.
 
 ## Next
 
-- No protocol implementation is part of the current design phase.
+- No source/protocol implementation is part of this Design PR.
 
 ## Current Truth References
 
-- Specs: `docs/specs/`
-- Architecture: `docs/architecture/`
-- Active changes: `docs/changes/`
+- Current specs: `docs/specs/`
+- Current architecture: `docs/architecture/`
+- Proposed/accepted target designs: `docs/designs/` on this design branch
+- Active implementation changes: `docs/changes/`
 - Durable decisions: `docs/adr/`
