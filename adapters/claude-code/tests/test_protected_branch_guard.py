@@ -455,6 +455,18 @@ class DeniedCommandsTest(RepoTestCase):
         self.assertDenied("git config rename-section tmp.x branch.feature/x")
         self.assertAllowed("git config --rename-section alias.old alias.new")
 
+    def test_cross_kind_and_other_source_renames_are_denied(self) -> None:
+        for command in [
+            "git config remote.tmp.remote origin && git config remote.tmp.merge refs/heads/main && git config --rename-section remote.tmp branch.feature/x",
+            "git config --rename-section branch.tmp remote.tmp",
+            "git config --file .git/config --rename-section safe.other remote.other",
+            "git config -f .git/config --rename-section remote.a remote.b",
+            "git config --global --rename-section remote.a remote.b",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git config --rename-section remote.origin remote.upstream")
+        self.assertAllowed("git config --file other.cfg --rename-section alias.a alias.b")
+
     def test_quoted_shell_owning_heredoc_is_checked(self) -> None:
         self.assertDenied("'bash' <<'EOF'\ngit push origin main\nEOF")
         self.assertDenied("\"/bin/sh\" <<EOF\ngit push origin develop\nEOF")

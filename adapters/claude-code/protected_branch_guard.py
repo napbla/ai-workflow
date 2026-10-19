@@ -69,6 +69,14 @@ GIT_GLOBAL_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", 
 # Global options replayed in the guard's own git lookups so they see the same repository and config.
 GIT_CONTEXT_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--config-env"}
 
+# `git config` options that take a separate value (from `git config -h`), and those selecting another config source.
+CONFIG_WITH_VALUE = {"-f", "--file", "--blob", "-t", "--type", "--default", "--comment", "--value", "--url"}
+CONFIG_LONG = [
+    "--file", "--blob", "--type", "--default", "--comment", "--value", "--url", "--global", "--system", "--local",
+    "--worktree", "--rename-section", "--remove-section", "--get", "--get-all", "--get-regexp", "--unset", "--unset-all",
+    "--add", "--replace-all", "--list", "--edit", "--show-origin", "--show-scope", "--null", "--name-only", "--includes",
+]
+CONFIG_OTHER_SOURCES = {"-f", "--file", "--blob", "--global", "--system"}
 # `git config` actions that read or remove rather than write.
 CONFIG_READ_SUBCOMMANDS = {"get", "list", "unset", "remove-section", "edit"}
 CONFIG_READ_OPTIONS = {
@@ -646,20 +654,31 @@ def check_config(args: list[str], repo: list[str]) -> str | None:
 
 
 def check_rename_section(args: list[str], repo: list[str]) -> str | None:
-    """Renaming a section moves its settings (upstream, push refspecs, mirror) to a new name."""
-    operands = [arg for arg in args if not arg.startswith("-") and arg != "rename-section"]
-    if not operands:
+    """Renaming a section moves its settings (upstream, push refspecs, mirror) to a new name.
+
+    Renames into `branch.*`/`remote.*` are denied unless the guard can verify them: the source must be
+    the same kind (key meanings are kind-specific) in the repository's own config (not `--file`/`--blob`),
+    and its current settings must not involve protected branches. Settings written earlier in the same
+    command cannot be seen, but sensitive writes to `branch.*`/`remote.*` are denied on their own.
+    """
+    args = expand_options(args, CONFIG_LONG, CONFIG_WITH_VALUE)
+    operands = [arg for arg in positionals_of(args, CONFIG_WITH_VALUE) if arg != "rename-section"]
+    if len(operands) < 2:
         return None
-    section = operands[0]
-    kind, _, name = section.partition(".")
-    destination_kind = operands[1].partition(".")[0].lower() if len(operands) > 1 else ""
-    if destination_kind in {"branch", "remote"} and kind.lower() not in {"branch", "remote"}:
-        # Its contents may have been written earlier in this same command, so they cannot be checked here.
-        return f"renaming config section `{section}` into a `{destination_kind}.*` section cannot be checked"
-    if kind.lower() == "branch" and name and (name in PROTECTED or protected_upstream(name, repo)):
-        return f"renaming config section `{section}` would move a protected branch's tracking settings"
-    if kind.lower() == "remote" and name and configured_push_problem(name, repo):
-        return f"renaming config section `{section}` would move push settings that target protected branches"
+    source, destination = operands[0], operands[1]
+    kind, _, name = source.partition(".")
+    kind, destination_kind = kind.lower(), destination.partition(".")[0].lower()
+    if kind not in {"branch", "remote"} and destination_kind not in {"branch", "remote"}:
+        return None
+    if destination_kind in {"branch", "remote"}:
+        if kind != destination_kind:
+            return f"renaming config section `{source}` into `{destination}` changes what its keys mean and cannot be checked"
+        if CONFIG_OTHER_SOURCES & set(args):
+            return f"renaming config section `{source}` in another config source cannot be checked"
+    if kind == "branch" and name and (name in PROTECTED or protected_upstream(name, repo)):
+        return f"renaming config section `{source}` would move a protected branch's tracking settings"
+    if kind == "remote" and name and configured_push_problem(name, repo):
+        return f"renaming config section `{source}` would move push settings that target protected branches"
     return None
 
 
