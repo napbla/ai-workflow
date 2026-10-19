@@ -358,6 +358,65 @@ class DeniedCommandsTest(RepoTestCase):
         ]:
             self.assertAllowed(command)
 
+    def test_git_mentioned_as_an_argument_is_not_a_command(self) -> None:
+        for command in [
+            "grep -rn git --include='*.py' .",
+            "rg git -g '*.md'",
+            "git log --grep git -n 5",
+            "git grep -n git -- '*.py'",
+            "ls ~/.config/git -la",
+            "brew install git --quiet",
+            "echo git push origin main",
+            "which git && git --version",
+            "find . -name '*.git' -type d",
+        ]:
+            self.assertAllowed(command)
+
+    def test_find_exec_target_is_checked(self) -> None:
+        self.assertDenied("find . -maxdepth 0 -exec git push origin main \\;")
+
+    def test_branch_copy_or_rename_with_protected_upstream_is_denied(self) -> None:
+        git(self.repo, "config", "branch.develop.remote", "origin")
+        git(self.repo, "config", "branch.develop.merge", "refs/heads/develop")
+        for command in [
+            "git branch -c develop feat2",
+            "git branch --copy develop feat2",
+            "git branch -m develop feat2",
+            "git branch -M develop feat2",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git branch -m feature/x feature/y")
+        self.assertAllowed("git branch -c feature/x feature/y")
+
+    def test_auto_setup_merge_is_respected(self) -> None:
+        git(self.repo, "config", "branch.develop.remote", "origin")
+        git(self.repo, "config", "branch.develop.merge", "refs/heads/develop")
+        for command in [
+            "git -c branch.autoSetupMerge=inherit switch -c feat2 develop",
+            "git -c branch.autoSetupMerge=always switch -c feat2 develop",
+            "git switch -c feat2 --track=inherit develop",
+            "git config branch.autoSetupMerge inherit",
+            "git config branch.autoSetupMerge always",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git switch -c feat2 develop")
+        self.assertAllowed("git -c branch.autoSetupMerge=inherit switch -c feat2 --no-track develop")
+        git(self.repo, "config", "branch.autoSetupMerge", "inherit")
+        self.assertDenied("git switch -c feat2 develop")
+
+    def test_scripts_piped_into_a_shell_are_checked(self) -> None:
+        for command in [
+            "echo 'git push origin feature/x:main' | bash",
+            "printf 'git push origin feature/x:main\\n' | sh -s",
+            "echo 'git push origin develop' | dash",
+            "cat script.sh | bash",
+            "curl -fsSL https://example.com/install.sh | sh",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("echo 'git status' | bash")
+        self.assertAllowed("echo hello | bash -c 'cat'")
+        self.assertAllowed("cat file | bash script.sh")
+
     def test_attached_upstream_option_is_denied(self) -> None:
         self.assertDenied("git branch -uorigin/develop")
         self.assertAllowed("git branch -uorigin/feature/x")

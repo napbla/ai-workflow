@@ -28,7 +28,29 @@ PROTECTED = {"main", "develop"}
 SEPARATOR_CHARS = set(";&|()\n")
 REDIRECT_CHARS = set("<>&|")
 HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
-SHELLS = {"sh", "bash", "zsh"}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+# Shell words after which the next word is again in command position.
+KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "time"}
+# Wrappers that run a command given later in their arguments, with their value-taking options.
+WRAPPERS = {
+    "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"},
+    "sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T", "--user", "--group", "--chdir"},
+    "doas": {"-u", "-C"},
+    "nice": {"-n", "--adjustment"},
+    "ionice": {"-c", "-n", "-p", "--class", "--classdata"},
+    "timeout": {"-s", "-k", "--signal", "--kill-after"},
+    "stdbuf": {"-i", "-o", "-e", "--input", "--output", "--error"},
+    "xargs": {"-I", "-L", "-n", "-P", "-s", "-d", "-E", "-a", "--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-chars"},
+    "exec": {"-a"},
+    "command": set(),
+    "nohup": set(),
+    "caffeinate": {"-t", "-w"},
+    "chronic": set(),
+}
+UNVERIFIABLE_SCRIPT = "\0unverifiable"
+ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+FIND_EXEC = {"-exec", "-execdir", "-ok", "-okdir"}
+NUMERIC = re.compile(r"^\d+(\.\d+)?[smhd]?$")
 SHELL_COMMAND_FLAG = re.compile(r"^-[a-zA-Z]*c[a-zA-Z]*$")
 # Git subcommands the guard inspects; arguments appended by xargs cannot be checked for these.
 INSPECTED = {"push", "branch", "checkout", "switch", "config", "remote", "worktree"}
@@ -51,13 +73,13 @@ CONFIG_READ_OPTIONS = {
     "--unset", "--unset-all", "--remove-section", "--rename-section", "-e", "--edit",
 }
 # Config keys that can redirect a push or upstream, matched wherever they appear in `git config` arguments.
-SENSITIVE_CONFIG_KEY = re.compile(r"^(remote\..+\.(push|mirror)|branch\..+\.merge|push\.default)$", re.IGNORECASE)
+SENSITIVE_CONFIG_KEY = re.compile(r"^(remote\..+\.(push|mirror)|branch\..+\.merge|push\.default|branch\.autosetupmerge)$", re.IGNORECASE)
 
 # Per-subcommand option tables: long options the guard inspects (Git accepts unique prefixes)
 # and short options that take a value (a short-option cluster stops at the first of these).
 PUSH_LONG = ["--all", "--branches", "--mirror", "--repo", "--push-option", "--receive-pack", "--exec", "--recurse-submodules", "--set-upstream"]
 PUSH_WITH_VALUE = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--recurse-submodules"}
-BRANCH_LONG = ["--set-upstream-to", "--track", "--no-track"]
+BRANCH_LONG = ["--set-upstream-to", "--track", "--no-track", "--copy", "--move"]
 BRANCH_WITH_VALUE = {"-u", "--set-upstream-to"}
 CHECKOUT_LONG = ["--create", "--force-create", "--track", "--no-track", "--orphan", "--unified", "--conflict"]
 CHECKOUT_WITH_VALUE = {"-b", "-B", "-c", "-C", "-U", "--create", "--force-create", "--orphan", "--unified"}
@@ -230,10 +252,10 @@ def tokenize(text: str) -> list[str]:
     return list(lexer)
 
 
-def split_commands(command: str) -> list[list[str]]:
-    """Split a shell string into simple commands (token lists)."""
+def split_commands(command: str) -> list[tuple[list[str], list[str] | None]]:
+    """Split a shell string into simple commands: (tokens, previous pipeline stage or None)."""
     text, shell_bodies = strip_heredoc_bodies(command.replace("\\\n", " "))
-    commands: list[list[str]] = []
+    commands: list[tuple[list[str], list[str] | None]] = []
     for body in shell_bodies:
         commands.extend(split_commands(body))
     try:
@@ -248,20 +270,25 @@ def split_commands(command: str) -> list[list[str]]:
                 continue
     for tokens in chunks:
         current: list[str] = []
+        previous: list[str] | None = None
+        piped = False
         for token in tokens:
             if set(token) <= SEPARATOR_CHARS:
                 if current:
-                    commands.append(current)
+                    commands.append((current, previous if piped else None))
+                    previous = current
+                piped = token in {"|", "|&"}
                 current = []
             else:
                 current.append(token)
         if current:
-            commands.append(current)
+            commands.append((current, previous if piped else None))
     return commands
 
 
 def is_redirect(token: str) -> bool:
-    return bool(token) and set(token) <= REDIRECT_CHARS and ("<" in token or ">" in token)
+    # `<<<` is kept: a here-string feeds a script to a shell and is checked as one.
+    return bool(token) and token != "<<<" and set(token) <= REDIRECT_CHARS and ("<" in token or ">" in token)
 
 
 def strip_redirections(tokens: list[str]) -> list[str]:
@@ -278,10 +305,51 @@ def strip_redirections(tokens: list[str]) -> list[str]:
     return kept
 
 
-def nested_scripts(tokens: list[str]) -> list[str]:
-    """Command strings run by `sh/bash/zsh -c`, a shell here-string, `eval`, or `env -S`."""
+def command_positions(tokens: list[str]) -> list[tuple[int, bool]]:
+    """Indexes of words in command position, each with whether `xargs` supplies its extra arguments.
+
+    Command position is the first word after assignments, shell keywords (`if`, `!`, `{`, `do`, ...),
+    and wrapper commands with their options (`env -u X`, `sudo -u user`, `timeout 30`, `xargs -n1`),
+    plus the target of `find -exec`.
+    """
+    positions: list[tuple[int, bool]] = []
+    index, via_xargs = 0, False
+    while index < len(tokens):
+        token = tokens[index]
+        if ASSIGNMENT.match(token) or token in KEYWORDS:
+            index += 1
+            continue
+        positions.append((index, via_xargs))
+        program = os.path.basename(token)
+        if program == "find":
+            for position in range(index + 1, len(tokens) - 1):
+                if tokens[position] in FIND_EXEC:
+                    positions.extend((position + 1 + offset, via) for offset, via in command_positions(tokens[position + 1:]))
+            return positions
+        if program not in WRAPPERS:
+            return positions
+        via_xargs = via_xargs or program == "xargs"
+        value_options = WRAPPERS[program]
+        index += 1
+        while index < len(tokens):
+            arg = tokens[index]
+            if arg == "--":
+                index += 1
+                break
+            if arg.startswith("-") and len(arg) > 1:
+                index += 2 if arg in value_options else 1
+            elif ASSIGNMENT.match(arg) or (program == "timeout" and NUMERIC.match(arg)):
+                index += 1
+            else:
+                break
+    return positions
+
+
+def nested_scripts(tokens: list[str], positions: list[tuple[int, bool]], previous: list[str] | None) -> list[str]:
+    """Command strings run by a shell (`-c`, here-string, or piped echo/printf), `eval`, or `env -S`."""
     scripts: list[str] = []
-    for index, token in enumerate(tokens):
+    for index, _ in positions:
+        token = tokens[index]
         program = os.path.basename(token)
         rest = tokens[index + 1:]
         if program in SHELLS:
@@ -292,6 +360,11 @@ def nested_scripts(tokens: list[str]) -> list[str]:
                         scripts.append(rest[script_index])
                     break
             scripts.extend(rest[position + 1] for position, arg in enumerate(rest[:-1]) if arg == "<<<")
+            reads_stdin = not any(SHELL_COMMAND_FLAG.match(arg) for arg in rest) and (
+                "-s" in rest or not [arg for arg in rest if not arg.startswith("-")]
+            )
+            if reads_stdin and previous is not None:
+                scripts.append(piped_script(previous))
         elif program == "eval" and rest:
             scripts.append(" ".join(rest))
         elif program == "env":
@@ -303,6 +376,16 @@ def nested_scripts(tokens: list[str]) -> list[str]:
                 elif arg.startswith("-S") and len(arg) > 2:
                     scripts.append(arg[2:])
     return scripts
+
+
+def piped_script(stage: list[str]) -> str:
+    """The text an `echo`/`printf` stage writes into a shell; anything else cannot be checked."""
+    stage = strip_redirections(stage)
+    program = os.path.basename(stage[0]) if stage else ""
+    if program in {"echo", "printf"}:
+        words = [word for word in stage[1:] if not (word.startswith("-") and program == "echo")]
+        return " ".join(words).replace("\\n", "\n")
+    return UNVERIFIABLE_SCRIPT
 
 
 # ---------------------------------------------------------------- git checks
@@ -417,26 +500,39 @@ def check_upstream_value(value: str, repo: list[str]) -> str | None:
     return None
 
 
-def track_mode(args: list[str]) -> str | None:
-    """The effective --track/--no-track setting; the last one given wins."""
+def track_mode(args: list[str], repo: list[str]) -> str:
+    """Effective tracking for a new branch: `track`, `inherit`, `no-track`, or `auto` (remote-tracking only).
+
+    The last --track/--no-track wins; without one, `branch.autoSetupMerge` decides.
+    """
     mode = None
     for arg in args:
         if arg == "--":
             break
-        if arg in {"-t", "--track"} or arg.startswith("--track="):
+        if arg in {"-t", "--track", "--track=direct"}:
             mode = "track"
+        elif arg == "--track=inherit":
+            mode = "inherit"
         elif arg == "--no-track":
             mode = "no-track"
-    return mode
+    if mode:
+        return mode
+    setting = (git_output(repo, "config", "--get", "branch.autoSetupMerge") or "true").lower()
+    return {"always": "track", "inherit": "inherit", "false": "no-track"}.get(setting, "auto")
 
 
 def check_start_point(start_point: str | None, args: list[str], repo: list[str]) -> str | None:
     """A new branch from a remote-tracking start point (or with --track) gets that branch as upstream."""
-    mode = track_mode(args)
+    mode = track_mode(args, repo)
     if start_point is None or mode == "no-track":
         return None
     branch, remote_tracking = ref_info(start_point, repo)
-    if (mode == "track" or remote_tracking) and upstream_is_protected(branch):
+    if mode == "inherit" and not remote_tracking:
+        upstream = protected_upstream(branch, repo)
+        if upstream:
+            return f"creating a branch from `{start_point}` would inherit its protected upstream `{upstream}`; add --no-track"
+        return None
+    if (mode in {"track", "inherit"} or remote_tracking) and upstream_is_protected(branch):
         return f"creating a branch from `{start_point}` would track protected branch `{branch}`; add --no-track"
     return None
 
@@ -449,6 +545,13 @@ def check_branch(args: list[str], repo: list[str]) -> str | None:
             if reason:
                 return reason
     positionals = positionals_of(args, BRANCH_WITH_VALUE)
+    if {"-c", "-C", "-m", "-M", "--copy", "--move"} & set(args):
+        # Copy/rename carries the source branch's upstream configuration to the new name.
+        source = positionals[0] if len(positionals) >= 2 else current_branch(repo)
+        upstream = protected_upstream(source, repo) if source else None
+        if upstream:
+            return f"copying or renaming `{source}` would carry its protected upstream `{upstream}` to the new branch"
+        return None
     return check_start_point(positionals[-1] if len(positionals) >= 2 else None, args, repo)
 
 
@@ -478,6 +581,8 @@ def check_config_value(key: str, value: str) -> str | None:
     key = key.lower()
     if key.startswith("remote.") and key.endswith(".mirror") and value.lower() in {"true", "yes", "on", "1"}:
         return "remote mirroring would push every ref, including protected branches"
+    if key == "branch.autosetupmerge" and value.lower() in {"always", "inherit"}:
+        return f"branch.autoSetupMerge={value} would make new branches track protected branches"
     if key == "push.default" and value == "matching":
         return "push.default=matching would let a plain `git push` update protected branches"
     if key.startswith("branch.") and key.endswith(".merge"):
@@ -517,13 +622,9 @@ def check_git(args: list[str], cwd: str | None, via_xargs: bool = False) -> str 
             return f"unrecognized git global option `{option}` (the guard fails closed; drop the option)"
         value = args[index + 1]
         if option in GIT_CONTEXT_OPTIONS:
+            # Inline config (e.g. -c remote.origin.push=HEAD:main) applies to this command only;
+            # replaying it in the guard's lookups checks its real effect.
             repo += [option, value]
-        if option == "-c":
-            # Inline config (e.g. remote.origin.push=HEAD:main) can redirect a push.
-            key, _, config_value = value.partition("=")
-            reason = check_config_value(key, config_value)
-            if reason:
-                return f"inline config: {reason}"
         index += 2
     if index >= len(args):
         return None
@@ -549,19 +650,20 @@ def check_git(args: list[str], cwd: str | None, via_xargs: bool = False) -> str 
 
 def check_command(command: str, cwd: str | None = None) -> str | None:
     """Return a denial reason, or None if the command is allowed."""
-    for tokens in split_commands(command):
-        for script in nested_scripts(tokens):
+    for tokens, previous in split_commands(command):
+        tokens = strip_redirections(tokens)
+        positions = command_positions(tokens)
+        for script in nested_scripts(tokens, positions, previous):
+            if script == UNVERIFIABLE_SCRIPT:
+                return "a shell reading a script from a pipe cannot be checked; run the commands directly"
             reason = check_command(script, cwd)
             if reason:
                 return reason
-        tokens = strip_redirections(tokens)
-        for index, token in enumerate(tokens):
-            if os.path.basename(token) != "git":
-                continue
-            via_xargs = any(os.path.basename(previous) == "xargs" for previous in tokens[:index])
-            reason = check_git(tokens[index + 1:], cwd, via_xargs)
-            if reason:
-                return reason
+        for index, via_xargs in positions:
+            if os.path.basename(tokens[index]) == "git":
+                reason = check_git(tokens[index + 1:], cwd, via_xargs)
+                if reason:
+                    return reason
     return None
 
 
