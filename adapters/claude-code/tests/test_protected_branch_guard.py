@@ -465,6 +465,21 @@ class DeniedCommandsTest(RepoTestCase):
         ]:
             self.assertDenied(command)
         self.assertAllowed("git config --rename-section remote.origin remote.upstream")
+
+    def test_abbreviated_rename_is_checked(self) -> None:
+        self.assertDenied("git config --ren remote.tmp branch.feature/x")
+        self.assertDenied("git config --rename remote.tmp branch.feature/x")
+
+    def test_rename_reads_the_scope_it_moves(self) -> None:
+        git(self.repo, "config", "extensions.worktreeConfig", "true")
+        git(self.repo, "config", "--local", "remote.a.mirror", "true")
+        git(self.repo, "config", "--worktree", "remote.a.mirror", "false")
+        self.assertDenied("git config --local --rename-section remote.a remote.b")
+        self.assertDenied("git config --rename-section remote.a remote.b")
+        git(self.repo, "config", "--local", "remote.c.push", "refs/heads/feature/x:refs/heads/main")
+        self.assertDenied("git config --rename-section remote.c remote.d")
+        git(self.repo, "config", "--local", "branch.tmp.merge", "refs/heads/develop")
+        self.assertDenied("git config --rename-section branch.tmp branch.feat2")
         self.assertAllowed("git config --file other.cfg --rename-section alias.a alias.b")
 
     def test_quoted_shell_owning_heredoc_is_checked(self) -> None:
@@ -497,6 +512,42 @@ class DeniedCommandsTest(RepoTestCase):
                 f"cd {self.repo} && git push",
             ]:
                 self.assertAllowed(command)
+
+    def test_uncertain_directory_changes_check_every_possibility(self) -> None:
+        with tempfile.TemporaryDirectory() as main_tmp:
+            main_repo = Path(main_tmp)
+            git(main_repo, "init", "-q", "-b", "main")
+            git(main_repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+            feature = self.repo
+            for command in [
+                f"true || cd {feature}; git push",
+                f"false && cd {feature}; git push",
+                f"if false; then cd {feature}; fi; git push",
+                f"if false; then\n  cd {feature}\nfi\ngit push",
+                f"cd {feature} & git push",
+                f"cd {feature} | cat; git push",
+                "cd /nonexistent-dir-for-guard-test; git push",
+            ]:
+                self.assertIsNotNone(guard.check_command(command, str(main_repo)), command)
+            self.assertIsNone(guard.check_command(f"cd {feature} && git push", str(main_repo)))
+            self.assertIsNone(guard.check_command(f"cd {feature}; git push -u origin feature/x", str(main_repo)))
+
+    def test_cd_through_builtin_command_and_eval_is_tracked(self) -> None:
+        with tempfile.TemporaryDirectory() as main_tmp:
+            main_repo = Path(main_tmp)
+            git(main_repo, "init", "-q", "-b", "main")
+            git(main_repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+            for command in [
+                f"builtin cd {main_repo}; git push",
+                f"command cd {main_repo}; git push",
+                f"eval cd {main_repo}; git push",
+                f"eval 'cd {main_repo}'; git push",
+            ]:
+                self.assertDenied(command)
+
+    def test_cd_to_repository_toplevel_is_resolved(self) -> None:
+        self.assertAllowed('cd "$(git rev-parse --show-toplevel)" && git push -u origin feature/x')
+        self.assertAllowed('cd "`git rev-parse --show-toplevel`" && git push -u origin feature/x')
 
     def test_heredoc_owned_by_non_shell_command_is_data(self) -> None:
         self.assertAllowed("bash build.sh && cat > notes.txt <<EOF\ngit push origin main\nEOF")

@@ -46,6 +46,7 @@ WRAPPERS = {
     "nohup": set(),
     "caffeinate": {"-t", "-w"},
     "chronic": set(),
+    "builtin": set(),
     "time": {"-o", "-f", "--output", "--format"},
     "arch": {"-arch", "-e", "-d"},
 }
@@ -309,14 +310,21 @@ def tokenize(text: str) -> list[str]:
     return list(lexer)
 
 
-def split_commands(command: str) -> list[tuple[list[str], list[str] | None]]:
-    """Split a shell string into simple commands: (tokens, previous pipeline stage or None)."""
+class SimpleCommand:
+    """One simple command with the pipeline stage feeding it and the separators around it."""
+
+    def __init__(self, tokens: list[str], previous: list[str] | None, before: str) -> None:
+        self.tokens, self.previous, self.before, self.after = tokens, previous, before, ""
+
+
+def split_commands(command: str) -> list[SimpleCommand]:
+    """Split a shell string into simple commands, with subshell markers for `(`/`)` and shell heredocs."""
     text, shell_bodies = strip_heredoc_bodies(command.replace("\\\n", " "))
-    commands: list[tuple[list[str], list[str] | None]] = []
+    commands: list[SimpleCommand] = []
     for body in shell_bodies:
-        commands.append(([SUBSHELL_OPEN], None))
+        commands.append(SimpleCommand([SUBSHELL_OPEN], None, ""))
         commands.extend(split_commands(body))
-        commands.append(([SUBSHELL_CLOSE], None))
+        commands.append(SimpleCommand([SUBSHELL_CLOSE], None, ""))
     try:
         chunks = [tokenize(text)]
     except ValueError:
@@ -330,21 +338,27 @@ def split_commands(command: str) -> list[tuple[list[str], list[str] | None]]:
     for tokens in chunks:
         current: list[str] = []
         previous: list[str] | None = None
-        piped = False
+        separator = ""
+        last: SimpleCommand | None = None
         for token in tokens:
             if set(token) <= SEPARATOR_CHARS:
                 if current:
-                    commands.append((current, previous if piped else None))
+                    piped = separator.startswith("|") and not separator.startswith("||")
+                    last = SimpleCommand(current, previous if piped else None, separator)
+                    commands.append(last)
                     previous = current
-                piped = token in {"|", "|&"}
+                if last is not None and not last.after:
+                    last.after = token
+                separator = token
                 current = []
                 for char in token:
                     if char in "()":
-                        commands.append(([SUBSHELL_OPEN if char == "(" else SUBSHELL_CLOSE], None))
+                        commands.append(SimpleCommand([SUBSHELL_OPEN if char == "(" else SUBSHELL_CLOSE], None, ""))
             else:
                 current.append(token)
         if current:
-            commands.append((current, previous if piped else None))
+            piped = separator.startswith("|") and not separator.startswith("||")
+            commands.append(SimpleCommand(current, previous if piped else None, separator))
     return commands
 
 
@@ -649,6 +663,7 @@ def check_create(args: list[str], create_flags: set[str], start_index: int, repo
 
 def check_config(args: list[str], repo: list[str]) -> str | None:
     """Check `git config` writes; sensitive keys are found by name so option layout does not matter."""
+    args = expand_options(args, CONFIG_LONG, CONFIG_WITH_VALUE)  # `--ren` → `--rename-section`
     if "--rename-section" in args or args[:1] == ["rename-section"]:
         return check_rename_section(args, repo)
     if args[:1] and args[0] in CONFIG_READ_SUBCOMMANDS or any(arg.split("=", 1)[0] in CONFIG_READ_OPTIONS for arg in args):
@@ -669,7 +684,6 @@ def check_rename_section(args: list[str], repo: list[str]) -> str | None:
     and its current settings must not involve protected branches. Settings written earlier in the same
     command cannot be seen, but sensitive writes to `branch.*`/`remote.*` are denied on their own.
     """
-    args = expand_options(args, CONFIG_LONG, CONFIG_WITH_VALUE)
     operands = [arg for arg in positionals_of(args, CONFIG_WITH_VALUE) if arg != "rename-section"]
     if len(operands) < 2:
         return None
@@ -683,10 +697,18 @@ def check_rename_section(args: list[str], repo: list[str]) -> str | None:
             return f"renaming config section `{source}` into `{destination}` changes what its keys mean and cannot be checked"
         if CONFIG_OTHER_SOURCES & set(args):
             return f"renaming config section `{source}` in another config source cannot be checked"
-    if kind == "branch" and name and (name in PROTECTED or protected_upstream(name, repo)):
+    if kind == "branch" and name in PROTECTED:
         return f"renaming config section `{source}` would move a protected branch's tracking settings"
-    if kind == "remote" and name and configured_push_problem(name, repo):
-        return f"renaming config section `{source}` would move push settings that target protected branches"
+    # Judge the values the rename actually moves: those in the scope being written, not the merged config.
+    scope = "--worktree" if "--worktree" in args else "--local"
+    pattern = "^" + re.escape(f"{kind}.{name}") + r"\."
+    entries = git_output(repo, "config", scope, "--get-regexp", pattern) or ""
+    for line in entries.splitlines():
+        key, _, value = line.partition(" ")
+        moved_key = destination + key[len(kind) + 1 + len(name):]
+        reason = check_config_value(moved_key, value)
+        if reason:
+            return f"renaming config section `{source}` would create `{moved_key}`: {reason}"
     return None
 
 
@@ -763,50 +785,64 @@ def check_git(args: list[str], cwd: str | None, via_xargs: bool = False, cwd_kno
     return None
 
 
+BLOCK_OPENERS = {"if", "while", "until", "for", "case", "select"}
+BLOCK_CLOSERS = {"fi", "done", "esac"}
+TOPLEVEL = re.compile(r"^(?:\$\(|`)git rev-parse --show-toplevel(?:\)|`)$")
+
+
 class Directory:
-    """The working directory as the shell would track it through `cd`/`pushd`/`popd`."""
+    """Every working directory the shell could be in after the commands seen so far.
+
+    A `cd` that certainly runs replaces the possibilities; one that might not run (conditional,
+    backgrounded, piped, in a block body, or to a missing directory) adds to them.
+    """
 
     def __init__(self, path: str | None, known: bool = True) -> None:
-        self.path = os.path.abspath(path or os.getcwd())
+        self.paths = {os.path.abspath(path or os.getcwd())}
         self.known = known
-        self.previous: str | None = None
-        self.stack: list[str] = []
+        self.previous: set[str] | None = None
+        self.stack: list[set[str]] = []
 
     def copy(self) -> "Directory":
-        other = Directory(self.path, self.known)
-        other.previous, other.stack = self.previous, list(self.stack)
+        other = Directory(None, self.known)
+        other.paths, other.previous, other.stack = set(self.paths), self.previous, [set(entry) for entry in self.stack]
         return other
 
-    def resolve(self, target: str | None) -> str | None:
+    def resolve(self, target: str | None, base: str) -> str | None:
         if target is None:
             return os.path.expanduser("~")
-        if target == "-":
-            return self.previous
+        if TOPLEVEL.match(target):
+            return git_output(["-C", base], "rev-parse", "--show-toplevel")
         if "$" in target or "`" in target:
             return None
-        return os.path.normpath(os.path.join(self.path, os.path.expanduser(target)))
+        return os.path.normpath(os.path.join(base, os.path.expanduser(target)))
 
-    def change(self, target: str | None) -> None:
-        resolved = self.resolve(target)
-        self.previous = self.path
-        if resolved is None:
-            self.known = False
+    def change(self, target: str | None, certain: bool) -> None:
+        if target == "-":
+            destinations, unknown = (set(self.previous) if self.previous else set()), not self.previous
         else:
-            self.path = resolved
+            resolved = {self.resolve(target, base) for base in self.paths}
+            unknown = None in resolved
+            destinations = {path for path in resolved if path}
+            certain = certain and all(os.path.isdir(path) for path in destinations)
+        self.previous = set(self.paths)
+        self.known = self.known and not unknown
+        self.paths = destinations if certain and destinations else self.paths | destinations
 
-    def apply(self, program: str, args: list[str]) -> None:
+    def apply(self, program: str, args: list[str], certain: bool) -> None:
         operands = [arg for arg in args if not arg.startswith("-") or arg == "-"]
         if program == "cd":
-            self.change(operands[0] if operands else None)
+            self.change(operands[0] if operands else None, certain)
         elif program == "pushd":
             if not operands:
                 self.known = False  # swaps with an unknown stack entry
                 return
-            self.stack.append(self.path)
-            self.change(operands[0])
+            self.stack.append(set(self.paths))
+            self.change(operands[0], certain)
         elif program == "popd":
             if self.stack:
-                self.previous, self.path = self.path, self.stack.pop()
+                restored = self.stack.pop()
+                self.paths = restored if certain else self.paths | restored
             else:
                 self.known = False
 
@@ -824,33 +860,53 @@ def wrapper_directory(prefix: list[str], directory: Directory) -> Directory:
             value = token[2:]
         if value is not None and any(os.path.basename(word) in {"env", "sudo"} for word in prefix[:index]):
             result = result.copy()
-            result.change(value)
+            result.change(value, certain=True)
     return result
 
 
-def check_command(command: str, cwd: str | None = None, cwd_known: bool = True) -> str | None:
-    """Return a denial reason, or None if the command is allowed."""
-    directory = Directory(cwd, cwd_known)
+def check_git_everywhere(args: list[str], directory: Directory, via_xargs: bool = False) -> str | None:
+    """Check a git invocation in every directory the shell could be in."""
+    for path in sorted(directory.paths):
+        reason = check_git(args, path, via_xargs, directory.known)
+        if reason:
+            return reason
+    return None
+
+
+def check_sequence(command: str, directory: Directory) -> str | None:
+    """Check a command string, updating `directory` as the shell would (shared with `eval`/`trap`)."""
     saved: list[Directory] = []
-    for tokens, previous in split_commands(command):
-        if tokens == [SUBSHELL_OPEN]:
+    depth = 0
+    for simple in split_commands(command):
+        if simple.tokens == [SUBSHELL_OPEN]:
             saved.append(directory.copy())
             continue
-        if tokens == [SUBSHELL_CLOSE]:
-            directory = saved.pop() if saved else directory
+        if simple.tokens == [SUBSHELL_CLOSE]:
+            if saved:
+                directory = saved.pop()
             continue
-        tokens = strip_redirections(tokens)
+        raw = simple.tokens
+        if raw[0] in BLOCK_OPENERS:
+            depth += 1
+        tokens = strip_redirections(raw)
         positions = command_positions(tokens)
-        for script in nested_scripts(tokens, positions, previous):
+        for index, _ in positions:
+            program = os.path.basename(tokens[index])
+            if program in {"eval", "trap"}:
+                # Runs in the current shell: directory changes inside it persist.
+                for script in nested_scripts(tokens[index:], [(0, False)], None):
+                    reason = check_sequence(script, directory)
+                    if reason:
+                        return reason
+        for script in nested_scripts(tokens, [(i, x) for i, x in positions if os.path.basename(tokens[i]) not in {"eval", "trap"}], simple.previous):
             if script == UNVERIFIABLE_SCRIPT:
                 return "a shell reading a script from a pipe cannot be checked; run the commands directly"
-            reason = check_command(script, directory.path, directory.known)
+            reason = check_sequence(script, directory.copy())
             if reason:
                 return reason
         for index, via_xargs in positions:
             if os.path.basename(tokens[index]) == "git":
-                where = wrapper_directory(tokens[:index], directory)
-                reason = check_git(tokens[index + 1:], where.path, via_xargs, where.known)
+                reason = check_git_everywhere(tokens[index + 1:], wrapper_directory(tokens[:index], directory), via_xargs)
                 if reason:
                     return reason
         # Backstop for wrappers the guard does not model: a `git <inspected subcommand>` sequence
@@ -858,13 +914,26 @@ def check_command(command: str, cwd: str | None = None, cwd_known: bool = True) 
         command_indexes = {index for index, _ in positions}
         for index, token in enumerate(tokens[:-1]):
             if index not in command_indexes and os.path.basename(token) == "git" and tokens[index + 1] in INSPECTED:
-                reason = check_git(tokens[index + 1:], directory.path, cwd_known=directory.known)
+                reason = check_git_everywhere(tokens[index + 1:], directory)
                 if reason:
                     return reason
-        if positions and os.path.basename(tokens[positions[0][0]]) in DIRECTORY_COMMANDS:
-            first = positions[0][0]
-            directory.apply(os.path.basename(tokens[first]), tokens[first + 1:])
+        if positions:
+            last = positions[-1][0]
+            program = os.path.basename(tokens[last])
+            if program in DIRECTORY_COMMANDS:
+                background_or_piped = simple.after.startswith("&") and not simple.after.startswith("&&") or (
+                    simple.after.startswith("|") and not simple.after.startswith("||")
+                ) or simple.previous is not None
+                conditional = depth > 0 or raw[0] in KEYWORDS or "&&" in simple.before or "||" in simple.before
+                directory.apply(program, tokens[last + 1:], certain=not (conditional or background_or_piped))
+        if raw[0] in BLOCK_CLOSERS or raw[-1] in BLOCK_CLOSERS:
+            depth = max(0, depth - 1)
     return None
+
+
+def check_command(command: str, cwd: str | None = None, cwd_known: bool = True) -> str | None:
+    """Return a denial reason, or None if the command is allowed."""
+    return check_sequence(command, Directory(cwd, cwd_known))
 
 
 def main() -> int:
