@@ -81,11 +81,35 @@ Agents must not interpret `docs/designs/` as evidence of current source behavior
 A Design file should carry at least:
 
 ```text
-Status: Proposed | Accepted | Implementing
+Status: Proposed | Accepted | Implementing | Realized
 Owner: architect
 ```
 
-and, once implementation starts, an implementation map that identifies the Changes realizing it.
+Once implementation starts, the Design also carries a **Realization Map** that identifies both the Changes and the current source areas realizing it.
+
+Example:
+
+```md
+## Realization Map
+
+Changes:
+- provider-contract — merged
+- apple-provider — merged
+- google-play-provider — in progress
+
+Source areas:
+- providers/contracts/**
+- providers/apple/**
+- providers/google-play/**
+
+Tests:
+- tests/providers/**
+
+Current-truth docs:
+- docs/architecture/data-provider.md
+```
+
+This map exists so a new agent can answer "which design explains this code?" without reconstructing the design from the whole codebase.
 
 ### Design lifecycle
 
@@ -245,43 +269,43 @@ This makes traceability one-way and explicit.
 
 After a Design is accepted, the architect may decompose it into multiple Changes.
 
-The Design should maintain an implementation map while it is active, for example:
+The Design maintains a Realization Map containing:
 
-```md
-## Implementation Map
+- the Changes derived from it and their state;
+- the source areas currently realizing it;
+- the tests protecting those areas;
+- the current architecture/spec/module docs that describe the implemented behavior.
 
-- provider-contract — planned
-- apple-provider — planned
-- google-play-provider — planned
-```
+Each merged Change updates that map when it materially changes the realization.
 
-Each Change may update that map as durable coordination state when it merges.
+The map is current traceability, not a changelog. It should describe what implements the Design now, not every path that ever did.
 
-The Design remains active planning truth until the target design has been sufficiently realized.
-
-## Design Completion
+## Design Realization and Retention
 
 When all required Changes for a Design are complete:
 
 1. fold implemented durable truth into code/tests/module docs/specs/architecture/ADRs as appropriate;
-2. verify that current truth no longer depends on the Design artifact to understand the implemented system;
-3. remove `docs/designs/<design-id>/`;
-4. let Git preserve the historical Design.
+2. update the Design's Realization Map to the source areas/tests/current docs that now realize it;
+3. set `Status: Realized`;
+4. remove the completed active `CHANGE.md`;
+5. keep the Design while it remains a useful current conceptual map of the implemented system.
 
-Do not maintain a design archive by default.
+A realized Design is **not an archive**. It remains because it answers a current question: "what design does this code implement?" and gives agents an entry point into the relevant source instead of forcing repo-wide rediscovery.
 
-If the final implementation Change completes the Design, that Change may perform the fold and remove the Design artifact.
+Remove a Design when it is fully superseded or no longer needed to understand the current system. Before removal, ensure its still-relevant knowledge has moved into the replacement Design/current architecture/spec/module docs. Git preserves the historical artifact.
 
-Crucially, all final fold/removal mutations happen **before the final reviewer/CI verdict**.
+All final fold, map updates, status transitions, and removals happen **before the final reviewer/CI verdict**.
 
 ```text
 implement source changes
         ↓
 fold durable current truth
         ↓
-remove completed CHANGE.md
+update Design Realization Map
         ↓
-remove completed DESIGN.md if this is the final Change
+mark Design Realized if complete
+        ↓
+remove completed CHANGE.md
         ↓
 push final HEAD
         ↓
@@ -296,7 +320,7 @@ Any HEAD change after a clean review makes that verdict stale and requires re-re
 
 ## Design vs Current Truth
 
-The repository now contains two intentionally different truths:
+The repository distinguishes implementation evidence from conceptual/target design state.
 
 ### Current implemented truth
 
@@ -310,16 +334,57 @@ These answer:
 
 > What is implemented now?
 
-### Accepted target/planning truth
+### Design registry
 
-- `docs/designs/`;
-- active `docs/changes/`.
+- `docs/designs/`.
 
-These answer:
+A Design's status determines how it may be interpreted:
 
-> What have we accepted to build, and what transformation is active?
+- `Proposed` / `Accepted` / `Implementing` — target/planning truth, not evidence that behavior exists;
+- `Realized` — a current conceptual map whose Realization Map points to the implementation evidence above.
 
-This distinction must be explicit in agent bootstrap and operator guidance so future-state design is never confused with current behavior.
+### Active transformation state
+
+- `docs/changes/`.
+
+This answers:
+
+> What coherent transformation is being implemented now?
+
+Agents should start from the relevant realized Design and its Realization Map, then inspect only the mapped source/tests/current docs needed for the task, rather than rediscovering the architecture from the whole codebase.
+
+## Design Traceability Index
+
+For projects with multiple Designs, maintain:
+
+```text
+docs/designs/INDEX.md
+```
+
+as a lightweight current lookup table, for example:
+
+```md
+| Design | Status | Source areas |
+| --- | --- | --- |
+| data-provider | Realized | providers/**, tests/providers/** |
+| analytics-engine | Implementing | analytics/** |
+```
+
+The index is not a second source of truth and not a history log. It is a navigation projection of the current Design files. If an entry disagrees with a Design's Realization Map, the Design file wins and the index must be corrected.
+
+This gives reverse navigation:
+
+```text
+source path
+   ↓
+docs/designs/INDEX.md
+   ↓
+Design
+   ↓
+Realization Map
+   ↓
+relevant current docs / tests / source
+```
 
 ## Pull Request Semantics
 
