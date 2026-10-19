@@ -8,14 +8,14 @@ This workflow is designed for **one human operator working with multiple AI agen
 2. Run `python init/init.py --target <repo>` from the `ai-workflow` checkout and choose the roles you need.
 3. Commit `.ai-workflow.yml`, `WORKFLOW.md`, `AGENTS.md`, `.agents/`, and `docs/` on `main`.
 4. Create `develop` from `main` and push it.
-5. Protect `main` and `develop` on the repository host (branch protection or rulesets): require a pull request, block force pushes and deletion. This is the authoritative enforcement of the protected branch policy.
-6. Optionally install a runtime adapter, such as the Claude Code hook in `adapters/claude-code/`, as an earlier guard.
+5. Protect `main` and `develop` on the repository host (branch protection or rulesets): require a pull request, block force pushes and deletion. This is the authoritative enforcement of the protected branch policy; ai-workflow does not try to reproduce it locally. Do not give agent credentials bypass permission.
+6. Verify the protection: with the agent runtime's token in `GH_TOKEN` (or `GITHUB_TOKEN`), run `python <ai-workflow>/check/branch_protection.py` from the project checkout, or pass `--repo OWNER/NAME`. Exit 0 means both branches are protected against that credential; any other result is a setup blocker to fix (see `check/README.md`).
 7. Connect repository access to the AI runtimes you use when available.
 8. Treat the repository as canonical project state.
 
 ### Runtime credentials
 
-To let an implementer runtime push its feature branch and open PRs without you, give it a credential scoped to the one repository with only the permissions it needs (for GitHub, a fine-grained token with Contents and Pull requests read/write) and a short expiry. Keep it outside the repository, rely on step 5 to stop it from updating `main` or `develop`, and revoke it when no longer needed.
+To let an implementer runtime push its feature branch and open PRs without you, give it a credential scoped to the one repository with only the permissions it needs (for GitHub, a fine-grained token with Contents and Pull requests read/write, plus Administration read-only so it can run the protection check) and a short expiry. Keep it outside the repository, rely on step 5 to stop it from updating `main` or `develop`, and revoke it when no longer needed.
 
 ### Invoking an agent
 

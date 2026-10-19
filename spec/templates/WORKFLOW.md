@@ -110,7 +110,9 @@ If repository access is unavailable, say so rather than silently using stale con
 - set `main` or `develop` as an upstream or push target;
 - bypass this policy with force, mirror, or all-branches pushes.
 
-This workflow defines the policy. Runtime-specific enforcement (for example agent tool hooks) belongs in runtime adapters. Local Git hooks and repository-host branch protection or rulesets are stronger complementary layers.
+Repository-host branch protection or rulesets are the authoritative enforcement of this policy. Both `main` and `develop` must require a pull request for updates and block force pushes and deletion, for every credential an agent runtime uses.
+
+Agents verify that protection instead of reproducing it locally. If protection is missing or cannot be verified, record it as a human setup blocker in `docs/status/CURRENT.md` with the required configuration, and never claim the branches are protected. Agent tool hooks and local Git hooks are optional conveniences, not security boundaries.
 
 ## Active Change Lifecycle
 

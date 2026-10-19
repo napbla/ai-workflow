@@ -64,7 +64,7 @@ Completed change artifacts are removed after durable knowledge is folded into th
 
 `main` and `develop` are protected: implementers never push to them or set them as upstream/push targets. `docs/status/CURRENT.md` is branch-sensitive and must be correct for the target branch when a branch is merged. `WORKFLOW.md` holds the full lifecycle, including autonomous change execution up to `ready-for-human-merge`.
 
-Enforcement is layered: repository-host branch protection is authoritative; runtime adapters (see `../adapters/`) and optional local Git hooks are complementary.
+Repository-host branch protection or rulesets are the authoritative enforcement: both branches require a pull request and block force pushes and deletion for agent credentials. Agents verify protection (for GitHub, `../check/branch_protection.py`) rather than parse local commands; missing or unverifiable protection is a human setup blocker.
 
 ## Compatibility
 
@@ -78,7 +78,7 @@ v2 is a semantic and structural change:
 - The `main` / `develop` / feature branch model and protected branch policy apply; active changes live only on feature branches.
 - Completion folds knowledge into the most appropriate current-truth surface instead of always `docs/specs/`.
 
-To migrate manually until `migrate/` exists: regenerate `WORKFLOW.md`, `AGENTS.md`, `.agents/`, and `docs/WORK_TRACKING.md` with `init/`, remove vendor-named agent files, set `protocol: 2`, create `develop` from `main`, and protect both branches on the repository host.
+To migrate manually until `migrate/` exists: regenerate `WORKFLOW.md`, `AGENTS.md`, `.agents/`, and `docs/WORK_TRACKING.md` with `init/`, remove vendor-named agent files, set `protocol: 2`, create `develop` from `main`, protect both branches on the repository host, and verify them with `check/branch_protection.py`.
 
 `init/` creates projects at the protocol version shipped with the checkout.
 `migrate/` may later transform existing repositories to a target protocol semantically.

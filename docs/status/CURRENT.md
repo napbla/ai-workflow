@@ -4,29 +4,26 @@ Updated: 2026-10-19
 
 ## Current Objective
 
-Implement protocol v2 with runtime-neutral roles, the `main` / `develop` / feature lifecycle, autonomous PR execution, and simplified GitHub-enforced branch protection.
+Protocol v2 is integrated on `develop`: role-based agent identities with runtimes assigned at invocation, the `main` / `develop` / feature branch lifecycle, autonomous change execution up to `ready-for-human-merge`, and GitHub branch protection as the enforcement boundary for `main` and `develop`, verified by `check/branch_protection.py`. `main` still carries stable protocol v1 until v2 is released through a reviewed PR from `develop`.
 
 ## Active Changes
 
-- `docs/changes/protocol-v2-simplified-branch-protection/CHANGE.md` — Planned, owned by the `implementer` role.
+- None.
 
 ## Human Attention
 
-- Configure GitHub branch protection/rulesets for `main` and `develop` if verification reports they are missing or unverifiable.
+- Confirm GitHub protection of `main` and `develop` with the agent runtime's credential: `GH_TOKEN=<token> python check/branch_protection.py` must exit 0. An anonymous check finds an active ruleset that requires a PR and blocks force pushes and deletion on both branches, but it cannot confirm that agent credentials are excluded from bypass, so protection is unverified until an authenticated run passes.
+- Confirm the implementer-proposed fixed protected branch names (decision 3 in `docs/adr/0001-protocol-v2-roles-and-branch-model.md`).
+- Decide when to release protocol v2 from `develop` to `main`.
 
 ## Blockers / Risks
 
-- Do not reintroduce local shell/Git semantic parsing as a protection mechanism.
-- GitHub repository-host protection is the authoritative enforcement boundary.
-- The replacement implementation should selectively reuse valid work from closed PR #2 without carrying forward its complex Claude guard.
+- Protection is unverified until an authenticated `check/branch_protection.py` run exits 0.
 
 ## Next
 
-- Implementer reads the active change and implements the smallest coherent protocol-v2 design.
-- Reuse valid PR #2 work selectively.
-- Add a simple GitHub branch-protection verification path.
-- Open a PR from this feature branch to `develop`; do not target `main`.
-- Iterate with an independent reviewer until the latest head is `ready-for-human-merge`.
+- Release `develop` → `main` through a reviewed PR when ready.
+- Set the next objective as a new active change on a feature branch from `develop`.
 
 ## Current Truth References
 

@@ -9,9 +9,8 @@ The repository protocol is the shared contract. Core tools remain separate modul
 ```text
 spec/       canonical protocol, roles, templates, version
 init/       bootstrap new repositories
-adapters/   runtime-specific enforcement of protocol policy (e.g. Claude Code hooks)
 migrate/    semantic migration module (planned)
-check/      protocol validation module (planned)
+check/      validation module (GitHub branch protection check; protocol validation planned)
 ```
 
 Consumers such as dashboards or agent runners should live in separate repositories and consume the protocol rather than becoming part of core.
@@ -21,10 +20,10 @@ Consumers such as dashboards or agent runners should live in separate repositori
 ```text
               spec
             /  |  \
-         init migrate check adapters
+         init migrate check
 ```
 
-`init`, `migrate`, `check`, and `adapters` may depend on `spec`. They should not depend on one another's internals.
+`init`, `migrate`, and `check` may depend on `spec`. They should not depend on one another's internals.
 
 ## Principles
 
@@ -50,7 +49,7 @@ The initializer asks for the project name and the role IDs to configure (default
 
 ```bash
 python -m unittest discover -s init/tests
-python -m unittest discover -s adapters/claude-code/tests
+python -m unittest discover -s check/tests
 ```
 
 ## Dogfood This Monorepo
