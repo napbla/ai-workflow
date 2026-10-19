@@ -471,6 +471,33 @@ class DeniedCommandsTest(RepoTestCase):
         self.assertDenied("'bash' <<'EOF'\ngit push origin main\nEOF")
         self.assertDenied("\"/bin/sh\" <<EOF\ngit push origin develop\nEOF")
 
+    def test_directory_changes_select_the_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as other_tmp:
+            other = Path(other_tmp)
+            git(other, "init", "-q", "-b", "main")
+            git(other, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+            for command in [
+                f"cd {other} && git push",
+                f"cd {other} && git push origin HEAD",
+                f"cd {other}; git branch -t feat2",
+                f"(cd {other} && git push)",
+                f"pushd {other} && git push",
+                f"env -C {other} git push",
+                f"bash -c 'cd {other} && git push'",
+                f"cd {other} && bash -c 'git push'",
+                'cd "$REPO" && git push origin feature/x',
+                "cd - && git push",
+            ]:
+                self.assertDenied(command)
+            for command in [
+                f"(cd {other} && git status); git push",
+                f"pushd {other}; popd; git push",
+                f"cd {other} && git log --oneline -1",
+                'cd "$REPO" && ls',
+                f"cd {self.repo} && git push",
+            ]:
+                self.assertAllowed(command)
+
     def test_heredoc_owned_by_non_shell_command_is_data(self) -> None:
         self.assertAllowed("bash build.sh && cat > notes.txt <<EOF\ngit push origin main\nEOF")
         self.assertDenied("cat notes.txt && bash <<EOF\ngit push origin main\nEOF")

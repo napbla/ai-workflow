@@ -50,6 +50,9 @@ WRAPPERS = {
     "arch": {"-arch", "-e", "-d"},
 }
 UNVERIFIABLE_SCRIPT = "\0unverifiable"
+# Markers emitted by split_commands for subshell boundaries, so directory changes stay scoped.
+SUBSHELL_OPEN, SUBSHELL_CLOSE = "\0(", "\0)"
+DIRECTORY_COMMANDS = {"cd", "pushd", "popd"}
 STDIN_PATHS = {"/dev/stdin", "/dev/fd/0", "-"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 FIND_EXEC = {"-exec", "-execdir", "-ok", "-okdir"}
@@ -311,7 +314,9 @@ def split_commands(command: str) -> list[tuple[list[str], list[str] | None]]:
     text, shell_bodies = strip_heredoc_bodies(command.replace("\\\n", " "))
     commands: list[tuple[list[str], list[str] | None]] = []
     for body in shell_bodies:
+        commands.append(([SUBSHELL_OPEN], None))
         commands.extend(split_commands(body))
+        commands.append(([SUBSHELL_CLOSE], None))
     try:
         chunks = [tokenize(text)]
     except ValueError:
@@ -333,6 +338,9 @@ def split_commands(command: str) -> list[tuple[list[str], list[str] | None]]:
                     previous = current
                 piped = token in {"|", "|&"}
                 current = []
+                for char in token:
+                    if char in "()":
+                        commands.append(([SUBSHELL_OPEN if char == "(" else SUBSHELL_CLOSE], None))
             else:
                 current.append(token)
         if current:
@@ -708,7 +716,7 @@ def check_remote(args: list[str]) -> str | None:
     return None
 
 
-def check_git(args: list[str], cwd: str | None, via_xargs: bool = False) -> str | None:
+def check_git(args: list[str], cwd: str | None, via_xargs: bool = False, cwd_known: bool = True) -> str | None:
     """Check one git invocation (`args` excludes the `git` word itself)."""
     index = 0
     repo = ["-C", cwd] if cwd else []
@@ -734,6 +742,8 @@ def check_git(args: list[str], cwd: str | None, via_xargs: bool = False) -> str 
     if index >= len(args):
         return None
     subcommand, rest = args[index], args[index + 1:]
+    if not cwd_known and subcommand in INSPECTED:
+        return f"the working directory for `git {subcommand}` cannot be determined (e.g. `cd $VAR`); use a literal path"
     if via_xargs and subcommand in INSPECTED:
         return f"`xargs` supplies arguments to `git {subcommand}` that cannot be checked"
     if subcommand == "push":
@@ -753,20 +763,94 @@ def check_git(args: list[str], cwd: str | None, via_xargs: bool = False) -> str 
     return None
 
 
-def check_command(command: str, cwd: str | None = None) -> str | None:
+class Directory:
+    """The working directory as the shell would track it through `cd`/`pushd`/`popd`."""
+
+    def __init__(self, path: str | None, known: bool = True) -> None:
+        self.path = os.path.abspath(path or os.getcwd())
+        self.known = known
+        self.previous: str | None = None
+        self.stack: list[str] = []
+
+    def copy(self) -> "Directory":
+        other = Directory(self.path, self.known)
+        other.previous, other.stack = self.previous, list(self.stack)
+        return other
+
+    def resolve(self, target: str | None) -> str | None:
+        if target is None:
+            return os.path.expanduser("~")
+        if target == "-":
+            return self.previous
+        if "$" in target or "`" in target:
+            return None
+        return os.path.normpath(os.path.join(self.path, os.path.expanduser(target)))
+
+    def change(self, target: str | None) -> None:
+        resolved = self.resolve(target)
+        self.previous = self.path
+        if resolved is None:
+            self.known = False
+        else:
+            self.path = resolved
+
+    def apply(self, program: str, args: list[str]) -> None:
+        operands = [arg for arg in args if not arg.startswith("-") or arg == "-"]
+        if program == "cd":
+            self.change(operands[0] if operands else None)
+        elif program == "pushd":
+            if not operands:
+                self.known = False  # swaps with an unknown stack entry
+                return
+            self.stack.append(self.path)
+            self.change(operands[0])
+        elif program == "popd":
+            if self.stack:
+                self.previous, self.path = self.path, self.stack.pop()
+            else:
+                self.known = False
+
+
+def wrapper_directory(prefix: list[str], directory: Directory) -> Directory:
+    """Apply `env -C dir` / `sudo -D dir` (and `--chdir`) given before a git invocation."""
+    result = directory
+    for index, token in enumerate(prefix):
+        value = None
+        if token in {"-C", "-D", "--chdir"} and index + 1 < len(prefix):
+            value = prefix[index + 1]
+        elif token.startswith("--chdir="):
+            value = token.split("=", 1)[1]
+        elif token.startswith("-C") and len(token) > 2 and not token.startswith("--"):
+            value = token[2:]
+        if value is not None and any(os.path.basename(word) in {"env", "sudo"} for word in prefix[:index]):
+            result = result.copy()
+            result.change(value)
+    return result
+
+
+def check_command(command: str, cwd: str | None = None, cwd_known: bool = True) -> str | None:
     """Return a denial reason, or None if the command is allowed."""
+    directory = Directory(cwd, cwd_known)
+    saved: list[Directory] = []
     for tokens, previous in split_commands(command):
+        if tokens == [SUBSHELL_OPEN]:
+            saved.append(directory.copy())
+            continue
+        if tokens == [SUBSHELL_CLOSE]:
+            directory = saved.pop() if saved else directory
+            continue
         tokens = strip_redirections(tokens)
         positions = command_positions(tokens)
         for script in nested_scripts(tokens, positions, previous):
             if script == UNVERIFIABLE_SCRIPT:
                 return "a shell reading a script from a pipe cannot be checked; run the commands directly"
-            reason = check_command(script, cwd)
+            reason = check_command(script, directory.path, directory.known)
             if reason:
                 return reason
         for index, via_xargs in positions:
             if os.path.basename(tokens[index]) == "git":
-                reason = check_git(tokens[index + 1:], cwd, via_xargs)
+                where = wrapper_directory(tokens[:index], directory)
+                reason = check_git(tokens[index + 1:], where.path, via_xargs, where.known)
                 if reason:
                     return reason
         # Backstop for wrappers the guard does not model: a `git <inspected subcommand>` sequence
@@ -774,9 +858,12 @@ def check_command(command: str, cwd: str | None = None) -> str | None:
         command_indexes = {index for index, _ in positions}
         for index, token in enumerate(tokens[:-1]):
             if index not in command_indexes and os.path.basename(token) == "git" and tokens[index + 1] in INSPECTED:
-                reason = check_git(tokens[index + 1:], cwd)
+                reason = check_git(tokens[index + 1:], directory.path, cwd_known=directory.known)
                 if reason:
                     return reason
+        if positions and os.path.basename(tokens[positions[0][0]]) in DIRECTORY_COMMANDS:
+            first = positions[0][0]
+            directory.apply(os.path.basename(tokens[first]), tokens[first + 1:])
     return None
 
 
