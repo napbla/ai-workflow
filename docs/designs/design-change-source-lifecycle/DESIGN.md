@@ -85,7 +85,7 @@ Status: Proposed | Accepted | Implementing | Realized
 Owner: architect
 ```
 
-Once implementation starts, the Design also carries a **Realization Map** that identifies both the Changes and the current source areas realizing it.
+Once implementation starts, the Design also carries a **Realization Map**. Realization is tracked per mapped area, not only by the Design's aggregate status.
 
 Example:
 
@@ -97,17 +97,24 @@ Changes:
 - apple-provider — merged
 - google-play-provider — in progress
 
-Source areas:
-- providers/contracts/**
-- providers/apple/**
-- providers/google-play/**
+Areas:
+- providers/contracts/** — Realized
+- providers/apple/** — Realized
+- providers/google-play/** — Target
 
 Tests:
-- tests/providers/**
+- tests/providers/contracts/** — Realized
+- tests/providers/apple/** — Realized
+- tests/providers/google-play/** — Target
 
 Current-truth docs:
-- docs/architecture/data-provider.md
+- docs/architecture/data-provider.md — Realized
 ```
+
+Per-area states are:
+
+- `Target` — accepted target scope, not evidence that source behavior exists yet;
+- `Realized` — the mapped source/test/doc currently implements that part of the Design.
 
 This map exists so a new agent can answer "which design explains this code?" without reconstructing the design from the whole codebase.
 
@@ -306,9 +313,9 @@ When a later Design supersedes only part of a realized Design, the old Design co
 The trim/split is atomic with realization of the replacement source:
 
 1. implement the replacement source;
-2. update the replacement Design Realization Map for the newly realized area;
-3. update or split the old Design so it describes only the scope still realized by old source;
-4. update `docs/designs/INDEX.md` so reverse lookup remains truthful and non-obsolete;
+2. mark the corresponding replacement Design area `Realized` (the Design may still remain `Implementing` overall);
+3. update or split the old Design so it no longer marks that area `Realized`;
+4. update `docs/designs/INDEX.md` so reverse lookup switches from old Design to replacement Design for that area;
 5. include all of those mutations in the same final reviewed HEAD.
 
 An `Accepted` or `Implementing` replacement Design does not by itself supersede the current realized mapping.
@@ -359,10 +366,14 @@ These answer:
 
 - `docs/designs/`.
 
-A Design's status determines how it may be interpreted:
+A Design's aggregate status describes lifecycle progress, not realization of every mapped area:
 
-- `Proposed` / `Accepted` / `Implementing` — target/planning truth, not evidence that behavior exists;
-- `Realized` — a current conceptual map whose Realization Map points to the implementation evidence above.
+- `Proposed` — under design review;
+- `Accepted` — target accepted, implementation not yet started;
+- `Implementing` — one or more required Changes remain incomplete; some mapped areas may already be `Realized`;
+- `Realized` — all required mapped areas are realized.
+
+Only **per-area `Realized` entries** in the Realization Map are evidence that a Design currently explains a source/test/doc area.
 
 ### Active transformation state
 
@@ -372,7 +383,7 @@ This answers:
 
 > What coherent transformation is being implemented now?
 
-Agents should start from the relevant realized Design and its Realization Map, then inspect only the mapped source/tests/current docs needed for the task, rather than rediscovering the architecture from the whole codebase.
+Agents should start from the Design whose Realization Map marks the relevant source area `Realized`, regardless of whether the Design's aggregate status is `Implementing` or `Realized`. They then inspect only the mapped source/tests/current docs needed for the task, rather than rediscovering the architecture from the whole codebase.
 
 ## Design Traceability Index
 
@@ -382,16 +393,18 @@ For projects with multiple Designs, maintain:
 docs/designs/INDEX.md
 ```
 
-as a lightweight current lookup table, for example:
+as a lightweight current lookup table of **realized mappings only**, for example:
 
 ```md
-| Design | Status | Source areas |
+| Design | Design status | Realized source areas |
 | --- | --- | --- |
-| data-provider | Realized | providers/**, tests/providers/** |
-| analytics-engine | Implementing | analytics/** |
+| data-provider | Implementing | providers/contracts/**, providers/apple/** |
+| analytics-engine | Realized | analytics/** |
 ```
 
-The index is not a second source of truth and not a history log. It is a navigation projection of the current Design files. If an entry disagrees with a Design's Realization Map, the Design file wins and the index must be corrected.
+Target-only areas do not appear in reverse lookup until they are realized.
+
+The index is not a second source of truth and not a history log. It is a navigation projection of current per-area `Realized` entries in Design files. If an entry disagrees with a Design's Realization Map, the Design file wins and the index must be corrected.
 
 This gives reverse navigation:
 
