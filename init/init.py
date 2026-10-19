@@ -21,15 +21,12 @@ SPEC_DIR = REPO_ROOT / "spec"
 DEFAULT_ROLES_PATH = SPEC_DIR / "roles.yaml"
 TEMPLATES_DIR = SPEC_DIR / "templates"
 VERSION_PATH = SPEC_DIR / "VERSION"
+DEFAULT_ROLE_IDS = ["architect", "implementer", "reviewer"]
+ROLE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
 def protocol_version() -> str:
     return VERSION_PATH.read_text(encoding="utf-8").strip()
-
-
-def slugify(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-    return slug or "agent"
 
 
 def load_roles(path: Path) -> dict[str, dict[str, Any]]:
@@ -37,6 +34,9 @@ def load_roles(path: Path) -> dict[str, dict[str, Any]]:
     roles = data.get("roles")
     if not isinstance(roles, dict) or not roles:
         raise ValueError(f"No roles found in {path}")
+    invalid = [role_id for role_id in roles if not isinstance(role_id, str) or not ROLE_ID_PATTERN.match(role_id)]
+    if invalid:
+        raise ValueError(f"Invalid role IDs in {path}: {', '.join(map(str, invalid))} (use lowercase letters, digits, and hyphens; quote numeric IDs in YAML)")
     return roles
 
 
@@ -48,21 +48,6 @@ def ask(prompt: str, default: str | None = None) -> str:
     suffix = f" [{default}]" if default else ""
     value = input(f"{prompt}{suffix}: ").strip()
     return value or (default or "")
-
-
-def choose_role(roles: dict[str, dict[str, Any]]) -> tuple[str, dict[str, Any]]:
-    items = list(roles.items())
-    print("\nRoles:")
-    for index, (_, role) in enumerate(items, start=1):
-        print(f"  {index}. {role.get('name', 'Unnamed')}")
-
-    while True:
-        raw = input("Select role: ").strip()
-        if raw.isdigit() and 1 <= int(raw) <= len(items):
-            return items[int(raw) - 1]
-        if raw in roles:
-            return raw, roles[raw]
-        print("Invalid role. Enter a number or role key.")
 
 
 def bullets(values: Any) -> str:
@@ -77,12 +62,14 @@ def authority_lines(authority: Any) -> str:
     return "\n".join(f"- **{key}**: `{value}`" for key, value in authority.items())
 
 
-def render_agent(agent: dict[str, Any]) -> str:
-    role = agent["role"]
+def role_name(role_id: str, role: dict[str, Any]) -> str:
+    return role.get("name", role_id)
+
+
+def render_role(role_id: str, role: dict[str, Any]) -> str:
     return load_template("agent.md").substitute(
-        agent_name=agent["name"],
-        agent_slug=agent["slug"],
-        role_name=role.get("name", agent["role_key"]),
+        role_id=role_id,
+        role_name=role_name(role_id, role),
         responsibilities=bullets(role.get("responsibilities")),
         capabilities=bullets(role.get("capabilities")),
         authority=authority_lines(role.get("authority")),
@@ -120,25 +107,19 @@ def write_file(path: Path, content: str, conflict_mode: str) -> bool:
     return True
 
 
-def collect_agents(roles: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    agents: list[dict[str, Any]] = []
-    used_slugs: set[str] = set()
+def collect_roles(roles: dict[str, dict[str, Any]]) -> list[str]:
+    print("\nAvailable roles:")
+    for role_id, role in roles.items():
+        print(f"  {role_id} — {role_name(role_id, role)}")
 
+    default = ",".join(role_id for role_id in DEFAULT_ROLE_IDS if role_id in roles) or ",".join(roles)
     while True:
-        name = input("\nAgent name (blank to finish): ").strip()
-        if not name:
-            break
-
-        slug = slugify(name)
-        if slug in used_slugs:
-            print(f"Agent ID '{slug}' already exists. Choose a different name.")
-            continue
-
-        role_key, role = choose_role(roles)
-        agents.append({"name": name, "slug": slug, "role_key": role_key, "role": role})
-        used_slugs.add(slug)
-
-    return agents
+        raw = ask("Roles to configure (comma-separated role IDs)", default)
+        selected = list(dict.fromkeys(part.strip() for part in raw.split(",") if part.strip()))
+        unknown = [role_id for role_id in selected if role_id not in roles]
+        if selected and not unknown:
+            return selected
+        print(f"Unknown role IDs: {', '.join(unknown)}" if unknown else "Select at least one role.")
 
 
 class ProtocolVersionAction(argparse.Action):
@@ -184,19 +165,19 @@ def main() -> int:
     if args.self:
         print("Mode: self-bootstrap monorepo")
 
-    default_project_name = "AI Workflow" if args.self else target.name
+    default_project_name = "ai-workflow" if args.self else target.name
     project_name = ask("Project name", default_project_name)
-    agents = collect_agents(roles)
+    role_ids = collect_roles(roles)
 
     workflow = load_template("WORKFLOW.md").substitute(
         project_name=project_name,
         protocol_version=version,
     )
     registry = "\n".join(
-        f"- **{a['name']}** — {a['role'].get('name', a['role_key'])} (`.agents/{a['slug']}.md`)"
-        for a in agents
-    ) or "_No agents configured yet._"
-    agents_md = load_template("AGENTS.md").substitute(agent_registry=registry)
+        f"- **{role_name(role_id, roles[role_id])}** — `{role_id}` (`.agents/{role_id}.md`)"
+        for role_id in role_ids
+    )
+    agents_md = load_template("AGENTS.md").substitute(role_registry=registry)
     work_tracking_md = load_template("WORK_TRACKING.md").substitute()
     status_md = load_template("STATUS.md").substitute(
         project_name=project_name,
@@ -209,8 +190,8 @@ def main() -> int:
         write_file(target / ".ai-workflow.yml", marker, conflict_mode)
         write_file(target / "WORKFLOW.md", workflow, conflict_mode)
         write_file(target / "AGENTS.md", agents_md, conflict_mode)
-        for agent in agents:
-            write_file(target / ".agents" / f"{agent['slug']}.md", render_agent(agent), conflict_mode)
+        for role_id in role_ids:
+            write_file(target / ".agents" / f"{role_id}.md", render_role(role_id, roles[role_id]), conflict_mode)
 
         write_file(target / "docs" / "WORK_TRACKING.md", work_tracking_md, conflict_mode)
         write_file(target / "docs" / "status" / "CURRENT.md", status_md, conflict_mode)
@@ -225,8 +206,7 @@ def main() -> int:
         return 130
 
     print("\nInitialization complete.")
-    if agents:
-        print("Bootstrap an agent with its agent ID, then have it read WORKFLOW.md, AGENTS.md, docs/WORK_TRACKING.md, and .agents/<id>.md.")
+    print("Invoke an agent runtime with a role ID, then have it read WORKFLOW.md, AGENTS.md, docs/WORK_TRACKING.md, and .agents/<role-id>.md.")
     return 0
 
 

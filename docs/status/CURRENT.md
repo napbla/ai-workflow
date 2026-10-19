@@ -4,24 +4,25 @@ Updated: 2026-10-19
 
 ## Current Objective
 
-Maintain the stable protocol v1 state on `main`.
+Protocol v2 is integrated on `develop`: role-based agent identities with runtimes assigned at invocation, the `main` / `develop` / feature branch lifecycle, autonomous change execution up to `ready-for-human-merge`, and GitHub branch protection as the enforcement boundary for `main` and `develop`, verified by `check/branch_protection.py`. `main` still carries stable protocol v1 until v2 is released through a reviewed PR from `develop`.
 
 ## Active Changes
 
-- None on `main`.
+- None.
 
 ## Human Attention
 
-- None.
+- Confirm the implementer-proposed fixed protected branch names (decision 3 in `docs/adr/0001-protocol-v2-roles-and-branch-model.md`).
+- Decide when to release protocol v2 from `develop` to `main`.
 
 ## Blockers / Risks
 
-- None.
+- None. `check/branch_protection.py`, run with the implementer's credential on 2026-10-19, exited 0: an active ruleset with no bypass actors requires a PR and blocks force pushes and deletion on both `main` and `develop`. Re-run it whenever agent credentials or rulesets change.
 
 ## Next
 
-- Ongoing development proceeds through `develop` and feature branches.
-- Stable changes reach `main` only through reviewed integration from `develop`.
+- Release `develop` → `main` through a reviewed PR when ready.
+- Set the next objective as a new active change on a feature branch from `develop`.
 
 ## Current Truth References
 

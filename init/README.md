@@ -13,6 +13,8 @@ python -m pip install -r init/requirements.txt
 python init/init.py --target /path/to/project
 ```
 
+The initializer prompts for the project name and a comma-separated list of role IDs from `spec/roles.yaml` (default: `architect,implementer,reviewer`), and writes one `.agents/<role-id>.md` per role. See `docs/specs/init-cli.md` for the full CLI contract.
+
 Dogfood this monorepo:
 
 ```bash
