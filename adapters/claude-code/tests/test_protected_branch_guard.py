@@ -527,6 +527,7 @@ class DeniedCommandsTest(RepoTestCase):
                 f"cd {feature} & git push",
                 f"cd {feature} | cat; git push",
                 "cd /nonexistent-dir-for-guard-test; git push",
+                f"function f {{\n  cd {feature}\n}}\ngit push",
             ]:
                 self.assertIsNotNone(guard.check_command(command, str(main_repo)), command)
             self.assertIsNone(guard.check_command(f"cd {feature} && git push", str(main_repo)))
@@ -542,6 +543,9 @@ class DeniedCommandsTest(RepoTestCase):
                 f"command cd {main_repo}; git push",
                 f"eval cd {main_repo}; git push",
                 f"eval 'cd {main_repo}'; git push",
+                f"function f {{ cd {main_repo}; }}; f; git push",
+                f"function f {{\n  cd {main_repo}\n}}\nf\ngit push",
+                f"f() {{ cd {main_repo}; }}; f; git push",
             ]:
                 self.assertDenied(command)
 

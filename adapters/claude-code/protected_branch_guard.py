@@ -395,6 +395,9 @@ def command_positions(tokens: list[str]) -> list[tuple[int, bool]]:
         if ASSIGNMENT.match(token) or token in KEYWORDS:
             index += 1
             continue
+        if token == "function":
+            index += 2  # `function NAME { ...; }` — the body follows the name
+            continue
         positions.append((index, via_xargs))
         program = os.path.basename(token)
         if program == "find":
@@ -886,8 +889,8 @@ def check_sequence(command: str, directory: Directory) -> str | None:
                 directory = saved.pop()
             continue
         raw = simple.tokens
-        if raw[0] in BLOCK_OPENERS:
-            depth += 1
+        # Block bodies (if/loops/case, and `{ ... }` groups including function bodies) may not run.
+        depth += (raw[0] in BLOCK_OPENERS) + raw.count("{")
         tokens = strip_redirections(raw)
         positions = command_positions(tokens)
         for index, _ in positions:
@@ -926,8 +929,7 @@ def check_sequence(command: str, directory: Directory) -> str | None:
                 ) or simple.previous is not None
                 conditional = depth > 0 or raw[0] in KEYWORDS or "&&" in simple.before or "||" in simple.before
                 directory.apply(program, tokens[last + 1:], certain=not (conditional or background_or_piped))
-        if raw[0] in BLOCK_CLOSERS or raw[-1] in BLOCK_CLOSERS:
-            depth = max(0, depth - 1)
+        depth = max(0, depth - (raw[0] in BLOCK_CLOSERS or raw[-1] in BLOCK_CLOSERS) - raw.count("}"))
     return None
 
 
