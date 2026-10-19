@@ -18,7 +18,8 @@ import subprocess
 import sys
 
 PROTECTED = {"main", "develop"}
-SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "\n"}
+SEPARATOR_CHARS = set(";&|()\n")
+HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
 SHELLS = {"sh", "bash", "zsh"}
 SHELL_COMMAND_FLAG = re.compile(r"^-[a-zA-Z]*c[a-zA-Z]*$")
 WRAPPERS = {"command", "env", "exec", "nohup", "sudo", "time"}
@@ -65,22 +66,46 @@ def current_branch(cwd: str | None) -> str | None:
     return name or None
 
 
+def strip_heredoc_bodies(command: str) -> str:
+    """Drop heredoc bodies (data such as commit messages), keeping the command lines."""
+    kept: list[str] = []
+    pending: list[tuple[str, bool]] = []
+    for line in command.split("\n"):
+        if pending:
+            delimiter, strip_tabs = pending[0]
+            if (line.lstrip("\t") if strip_tabs else line) == delimiter:
+                pending.pop(0)
+            continue
+        kept.append(line)
+        pending = [(m.group(3), m.group(1) == "-") for m in HEREDOC.finditer(line)]
+    return "\n".join(kept)
+
+
+def tokenize(text: str) -> list[str]:
+    lexer = shlex.shlex(text, posix=True, punctuation_chars=";&|()\n")
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    return list(lexer)
+
+
 def split_commands(command: str) -> list[list[str]]:
     """Split a shell string into simple commands (token lists)."""
+    text = strip_heredoc_bodies(command.replace("\\\n", " "))
+    try:
+        chunks = [tokenize(text)]
+    except ValueError:
+        # Unbalanced quoting: check each line on its own and skip lines that do not parse.
+        chunks = []
+        for line in text.split("\n"):
+            try:
+                chunks.append(tokenize(line))
+            except ValueError:
+                continue
     commands: list[list[str]] = []
-    for line in command.replace("\\\n", " ").split("\n"):
-        lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|()")
-        lexer.whitespace_split = True
-        try:
-            tokens = list(lexer)
-        except ValueError:
-            # Unparseable line (e.g. heredoc body text); fall back to a coarse check.
-            if re.search(r"\bgit\b.*\b(push|branch|config|checkout|switch)\b", line) and re.search(r"\b(main|develop)\b", line):
-                commands.append(["__unparsed__", line])
-            continue
+    for tokens in chunks:
         current: list[str] = []
         for token in tokens:
-            if token in SEPARATORS or set(token) <= set(";&|()"):
+            if set(token) <= SEPARATOR_CHARS:
                 if current:
                     commands.append(current)
                 current = []
@@ -98,7 +123,7 @@ def strip_prefix(tokens: list[str]) -> list[str]:
     return tokens[index:]
 
 
-def check_push(args: list[str], cwd: str | None) -> str | None:
+def check_push(args: list[str], cwd: str | None, push_default: str | None = None) -> str | None:
     positionals: list[str] = []
     index = 0
     while index < len(args):
@@ -117,6 +142,8 @@ def check_push(args: list[str], cwd: str | None) -> str | None:
 
     refspecs = positionals[1:]
     if not refspecs:
+        if (push_default or git_output(cwd, "config", "--get", "push.default")) == "matching":
+            return "`git push` with push.default=matching would push every matching branch, including protected ones"
         branch = current_branch(cwd)
         if branch in PROTECTED:
             return f"`git push` without a refspec would push the protected branch `{branch}`"
@@ -127,6 +154,8 @@ def check_push(args: list[str], cwd: str | None) -> str | None:
         return None
 
     for refspec in refspecs:
+        if refspec.lstrip("+") == ":":
+            return f"matching refspec `{refspec}` would push every branch that exists on the remote, including protected ones"
         source, _, destination = refspec.partition(":")
         if not _:
             destination = source
@@ -189,6 +218,8 @@ def check_config(args: list[str]) -> str | None:
     if len(positionals) < 2:
         return None
     key, value = positionals[0].lower(), positionals[1]
+    if key == "push.default" and value == "matching":
+        return "push.default=matching would let a plain `git push` update protected branches"
     if key.startswith("branch.") and key.endswith(".merge"):
         return check_upstream_value(value)
     if key.startswith("remote.") and key.endswith(".push"):
@@ -200,16 +231,19 @@ def check_config(args: list[str]) -> str | None:
 
 def check_git(args: list[str], cwd: str | None) -> str | None:
     index = 0
+    push_default = None
     while index < len(args) and args[index].startswith("-"):
         option = args[index]
         if option == "-C" and index + 1 < len(args):
             cwd = os.path.join(cwd or os.getcwd(), args[index + 1])
+        if option == "-c" and index + 1 < len(args) and args[index + 1].lower().startswith("push.default="):
+            push_default = args[index + 1].split("=", 1)[1]
         index += 2 if option in GIT_GLOBAL_WITH_VALUE else 1
     if index >= len(args):
         return None
     subcommand, rest = args[index], args[index + 1:]
     if subcommand == "push":
-        return check_push(rest, cwd)
+        return check_push(rest, cwd, push_default)
     if subcommand == "branch":
         return check_branch(rest)
     if subcommand == "checkout":
@@ -224,8 +258,6 @@ def check_git(args: list[str], cwd: str | None) -> str | None:
 def check_command(command: str, cwd: str | None = None) -> str | None:
     """Return a denial reason, or None if the command is allowed."""
     for tokens in split_commands(command):
-        if tokens[0] == "__unparsed__":
-            return "an unparseable git command mentions a protected branch"
         tokens = strip_prefix(tokens)
         if not tokens:
             continue

@@ -74,6 +74,15 @@ class AllowedCommandsTest(RepoTestCase):
     def test_heredoc_commit_message_is_allowed(self) -> None:
         self.assertAllowed("git commit -q -F - <<'EOF'\nfeat: don't break develop\n\nIt's fine.\nEOF")
 
+    def test_messages_describing_protected_pushes_are_allowed(self) -> None:
+        for command in [
+            "git commit -m \"$(cat <<'EOF'\nfeat: guard\n\nImplementers can't git push to main or develop.\nEOF\n)\"",
+            "gh pr create --base develop --body \"$(cat <<'EOF'\n- Block git push to main; don't allow develop upstream\ngit push origin main\nEOF\n)\"",
+            "git commit -m \"docs\n\nUse git checkout -b feature/x origin/develop --no-track\"",
+            "cat > notes.md <<-EOF\n\tgit push origin develop\n\tEOF\ngit add notes.md",
+        ]:
+            self.assertAllowed(command)
+
 
 class DeniedCommandsTest(RepoTestCase):
     def test_protected_destinations_are_denied(self) -> None:
@@ -96,6 +105,21 @@ class DeniedCommandsTest(RepoTestCase):
     def test_all_and_mirror_pushes_are_denied(self) -> None:
         for command in ["git push --all origin", "git push --mirror origin", "git push --branches origin"]:
             self.assertDenied(command)
+
+    def test_matching_pushes_are_denied(self) -> None:
+        for command in [
+            "git push origin :",
+            "git push origin +:",
+            "git -c push.default=matching push",
+            "git config push.default matching",
+        ]:
+            self.assertDenied(command)
+        git(self.repo, "config", "push.default", "matching")
+        self.assertDenied("git push")
+        self.assertAllowed("git push origin feature/x")
+
+    def test_commands_after_heredoc_are_still_checked(self) -> None:
+        self.assertDenied("cat > msg <<'EOF'\nnotes\nEOF\ngit push origin main")
 
     def test_compound_and_nested_commands_are_checked(self) -> None:
         for command in [

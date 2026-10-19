@@ -5,11 +5,11 @@
 It blocks (exit code 2, reason returned to Claude):
 
 - pushes whose destination is `main` or `develop`, including `HEAD:main`, `+develop`, `:develop` (delete), and wildcard refspecs;
-- `git push --all`, `--branches`, and `--mirror`;
+- `git push --all`, `--branches`, `--mirror`, matching pushes (`git push origin :`), and `push.default=matching` (via `-c` or `git config`, or already configured for a refspec-less push);
 - refspec-less `git push` from `main`/`develop`, or from a branch whose upstream is `main`/`develop`;
 - setting `main`/`develop` as upstream: `git branch -u/--set-upstream-to`, `git config branch.<b>.merge`, `git config remote.<r>.push`, and creating a branch from `origin/main`/`origin/develop` without `--no-track`.
 
-Normal feature-branch pushes such as `git push -u origin feature/<change-id>` are allowed. Commands are checked through `&&`, `;`, pipes, newlines, and `sh/bash/zsh -c`.
+Normal feature-branch pushes such as `git push -u origin feature/<change-id>` are allowed. Commands are checked through `&&`, `;`, pipes, newlines, and `sh/bash/zsh -c`. Quoted strings and heredoc bodies are treated as data, so commit messages and PR bodies that mention `main` or `develop` are not blocked.
 
 This is best-effort parsing of shell text, not a security boundary: variables, aliases, or scripts can evade it. Repository-host branch protection is the authoritative layer.
 
