@@ -22,15 +22,19 @@ SEPARATOR_CHARS = set(";&|()\n")
 HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
 SHELLS = {"sh", "bash", "zsh"}
 SHELL_COMMAND_FLAG = re.compile(r"^-[a-zA-Z]*c[a-zA-Z]*$")
-WRAPPERS = {"command", "env", "exec", "nohup", "sudo", "time"}
+# Commands that run another command given later in their arguments.
+WRAPPERS = {"command", "env", "exec", "nohup", "sudo", "doas", "time", "nice", "ionice", "timeout", "stdbuf", "xargs", "caffeinate", "chronic"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 # git global options that consume the following token.
 GIT_REPO_OPTIONS = {"-C", "--git-dir", "--work-tree"}
 GIT_GLOBAL_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix", "--config-env"}
-CONFIG_WITH_VALUE = {"-f", "--file", "--blob", "--type", "--default", "--comment", "--value", "--url"}
-PUSH_WITH_VALUE = {"--repo", "-o", "--push-option", "--receive-pack", "--exec"}
+# Config keys that can redirect a push or upstream, matched wherever they appear in `git config` arguments.
+SENSITIVE_CONFIG_KEY = re.compile(r"^(remote\..+\.(push|mirror)|branch\..+\.merge|push\.default)$", re.IGNORECASE)
+# `git push` options that take a separate value (from `git push -h`).
+PUSH_WITH_VALUE = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--recurse-submodules"}
 # Long options the guard inspects; Git accepts any unique prefix of a long option.
-PUSH_LONG = ["--all", "--branches", "--mirror", "--repo", "--push-option", "--receive-pack", "--exec", "--set-upstream"]
+PUSH_LONG = ["--all", "--branches", "--mirror", "--repo", "--push-option", "--receive-pack", "--exec", "--recurse-submodules", "--set-upstream"]
+REMOTE_ADD_LONG = ["--mirror", "--master"]
 BRANCH_LONG = ["--set-upstream-to", "--track", "--no-track"]
 CHECKOUT_LONG = ["--create", "--force-create", "--track", "--no-track"]
 
@@ -177,9 +181,15 @@ def split_commands(command: str) -> list[list[str]]:
 
 
 def strip_prefix(tokens: list[str]) -> list[str]:
+    """Drop leading variable assignments and wrapper commands (`env -i`, `timeout 5`, ...)."""
     index = 0
-    while index < len(tokens) and (ASSIGNMENT.match(tokens[index]) or os.path.basename(tokens[index]) in WRAPPERS):
+    while index < len(tokens) and ASSIGNMENT.match(tokens[index]):
         index += 1
+    if index < len(tokens) and os.path.basename(tokens[index]) in WRAPPERS:
+        for position in range(index + 1, len(tokens)):
+            if os.path.basename(tokens[position]) in SHELLS | {"git"}:
+                return tokens[position:]
+        return []
     return tokens[index:]
 
 
@@ -202,7 +212,7 @@ def push_remote(branch: str | None, repo: list[str]) -> str:
     return "origin"
 
 
-def check_push(args: list[str], repo: list[str], push_default: str | None = None) -> str | None:
+def check_push(args: list[str], repo: list[str]) -> str | None:
     args = expand_long_options(args, PUSH_LONG)
     positionals: list[str] = []
     repo_option: str | None = None
@@ -234,7 +244,7 @@ def check_push(args: list[str], repo: list[str], push_default: str | None = None
         for configured in (git_output(repo, "config", "--get-all", f"remote.{remote}.push") or "").splitlines():
             if is_protected(refspec_destination(configured, repo)):
                 return f"configured refspec `remote.{remote}.push={configured}` targets a protected branch"
-        if (push_default or git_output(repo, "config", "--get", "push.default")) == "matching":
+        if git_output(repo, "config", "--get", "push.default") == "matching":
             return "`git push` with push.default=matching would push every matching branch, including protected ones"
         if branch in PROTECTED:
             return f"`git push` without a refspec would push the protected branch `{branch}`"
@@ -323,20 +333,17 @@ def check_checkout(args: list[str], create_flags: set[str]) -> str | None:
 
 
 def check_config(args: list[str]) -> str | None:
-    positionals: list[str] = []
-    index = 0
-    while index < len(args):
-        if args[index] in CONFIG_WITH_VALUE:
-            index += 2
-            continue
-        if not args[index].startswith("-"):
-            positionals.append(args[index])
-        index += 1
-    if positionals[:1] in (["set"], ["add"]):
-        positionals = positionals[1:]
-    if len(positionals) < 2:
-        return None
-    key, value = positionals[0].lower(), positionals[1]
+    """Check `git config` arguments; sensitive keys are found by name so option layout does not matter."""
+    for index, arg in enumerate(args[:-1]):
+        if SENSITIVE_CONFIG_KEY.match(arg):
+            reason = check_config_value(arg, args[index + 1])
+            if reason:
+                return reason
+    return None
+
+
+def check_config_value(key: str, value: str) -> str | None:
+    key = key.lower()
     if key.startswith("remote.") and key.endswith(".mirror") and value.lower() in {"true", "yes", "on", "1"}:
         return "remote mirroring would push every ref, including protected branches"
     if key == "push.default" and value == "matching":
@@ -350,9 +357,18 @@ def check_config(args: list[str]) -> str | None:
     return None
 
 
+def check_remote(args: list[str]) -> str | None:
+    if args[:1] != ["add"]:
+        return None
+    for arg in expand_long_options(args[1:], REMOTE_ADD_LONG):
+        if arg in {"--mirror", "--mirror=push"}:
+            return "`git remote add --mirror` would make plain pushes to that remote update every ref, including protected branches"
+    return None
+
+
 def check_git(args: list[str], cwd: str | None) -> str | None:
     index = 0
-    push_default = None
+    # Git global options that change which repository or configuration is used; replayed in lookups.
     repo = ["-C", cwd] if cwd else []
     while index < len(args) and args[index].startswith("-"):
         option = args[index]
@@ -363,20 +379,22 @@ def check_git(args: list[str], cwd: str | None) -> str | None:
             continue
         if option in GIT_REPO_OPTIONS and index + 1 < len(args):
             repo += [option, args[index + 1]]
-        if option == "-c" and index + 1 < len(args):
-            # Inline config (e.g. remote.origin.push=HEAD:main) can redirect a push.
-            key, _, value = args[index + 1].partition("=")
-            reason = check_config([key, value])
-            if reason:
-                return f"inline config: {reason}"
-            if key.lower() == "push.default":
-                push_default = value
+        if option in {"-c", "--config-env"} and index + 1 < len(args):
+            repo += [option, args[index + 1]]
+            if option == "-c":
+                # Inline config (e.g. remote.origin.push=HEAD:main) can redirect a push.
+                key, _, value = args[index + 1].partition("=")
+                reason = check_config_value(key, value)
+                if reason:
+                    return f"inline config: {reason}"
+        elif name == "--config-env" and attached:
+            repo.append(option)
         index += 2 if option in GIT_GLOBAL_WITH_VALUE else 1
     if index >= len(args):
         return None
     subcommand, rest = args[index], args[index + 1:]
     if subcommand == "push":
-        return check_push(rest, repo, push_default)
+        return check_push(rest, repo)
     if subcommand == "branch":
         return check_branch(rest)
     if subcommand == "checkout":
@@ -385,6 +403,8 @@ def check_git(args: list[str], cwd: str | None) -> str | None:
         return check_checkout(rest, {"-c", "-C", "--create", "--force-create"})
     if subcommand == "config":
         return check_config(rest)
+    if subcommand == "remote":
+        return check_remote(rest)
     return None
 
 

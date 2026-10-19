@@ -206,6 +206,63 @@ class DeniedCommandsTest(RepoTestCase):
     def test_shell_option_terminator_is_skipped(self) -> None:
         self.assertDenied("bash -c -- 'git push origin main'")
 
+    def test_config_keys_are_found_regardless_of_options(self) -> None:
+        for command in [
+            "git config -t bool remote.origin.mirror true",
+            "git config --type=bool remote.origin.mirror yes",
+            "git config --local --add remote.origin.push refs/heads/x:refs/heads/develop",
+            "git config --replace-all branch.feature/x.merge refs/heads/main",
+            "git config --global push.default matching",
+        ]:
+            self.assertDenied(command)
+        for command in [
+            "git config -t bool core.bare false",
+            "git config --get remote.origin.push",
+            "git config --unset branch.feature/x.merge",
+            "git config remote.origin.push refs/heads/feature/x:refs/heads/feature/x",
+        ]:
+            self.assertAllowed(command)
+
+    def test_inline_config_is_used_to_resolve_push_remote(self) -> None:
+        git(self.repo, "config", "remote.other.push", "HEAD:refs/heads/main")
+        for command in [
+            "git -c remote.pushDefault=other push",
+            "git -c branch.feature/x.pushRemote=other push",
+            "git -c branch.feature/x.remote=other push",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git -c remote.pushDefault=origin push")
+
+    def test_push_options_with_separate_values_are_consumed(self) -> None:
+        git(self.repo, "config", "remote.origin.push", "HEAD:refs/heads/main")
+        for command in [
+            "git push --recurse-submodules on-demand",
+            "git push --recurse-sub check",
+            "git push -o ci.skip",
+        ]:
+            self.assertDenied(command)
+
+    def test_remote_add_mirror_is_denied(self) -> None:
+        for command in [
+            "git remote add --mirror backup https://example.com/r.git",
+            "git remote add --mirror=push backup https://example.com/r.git",
+            "git remote add --mir backup https://example.com/r.git",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git remote add --mirror=fetch backup https://example.com/r.git")
+        self.assertAllowed("git remote add upstream https://example.com/r.git")
+
+    def test_wrapper_commands_are_unwrapped(self) -> None:
+        for command in [
+            "env -i git push origin main",
+            "timeout 30 git push origin develop",
+            "nice -n 5 git push origin main",
+            "sudo -u someone git push origin main",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("timeout 30 git push origin feature/x")
+        self.assertAllowed("env FOO=1 python3 script.py main")
+
     def test_attached_upstream_option_is_denied(self) -> None:
         self.assertDenied("git branch -uorigin/develop")
         self.assertAllowed("git branch -uorigin/feature/x")

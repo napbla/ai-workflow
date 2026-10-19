@@ -13,7 +13,7 @@ The repository checked is the one Git would use, including `-C`, `--git-dir`, an
 
 Normal feature-branch pushes such as `git push -u origin feature/<change-id>` are allowed. Commands are checked through `&&`, `;`, pipes, newlines, and `sh/bash/zsh -c`. Quoted strings and heredoc bodies are treated as data, so commit messages and PR bodies that mention `main` or `develop` are not blocked.
 
-Inline `git -c` settings that redirect a push (`remote.*.push`, `branch.*.merge`, `push.default=matching`, `remote.*.mirror`) are checked like `git config`. Heredocs fed to a shell (`bash <<EOF`) are checked as commands.
+`git config` writes to `remote.*.push`, `remote.*.mirror`, `branch.*.merge`, or `push.default` are checked wherever the key appears among the arguments, and `git remote add --mirror[=push]` is denied. Inline `git -c`/`--config-env` settings are checked the same way and are also applied when the guard resolves the push remote and its configuration. Wrapper commands such as `env`, `sudo`, `timeout`, `nice`, and `xargs` are unwrapped. Heredocs fed to a shell (`bash <<EOF`) are checked as commands.
 
 This is best-effort parsing of shell text, not a security boundary: variables (including `GIT_DIR=...` prefixes), aliases, scripts, and backtick substitutions can evade it. Repository-host branch protection is the authoritative layer.
 
