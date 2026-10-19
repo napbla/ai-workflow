@@ -1,6 +1,6 @@
 # Generalize Agent Runtime Model and Branch Lifecycle
 
-Status: Planned
+Status: In Progress
 Owner: implementer (runtime assigned at invocation)
 
 ## Goal
