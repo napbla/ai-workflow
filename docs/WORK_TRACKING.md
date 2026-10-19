@@ -34,13 +34,15 @@ Do not preserve conversation for its own sake.
 
 Use `docs/changes/<change-id>/CHANGE.md` for non-trivial committed work that needs cross-session or cross-agent coordination.
 
+The active change lives on its feature branch (`feature/<change-id>` by default), never directly on `main`.
+
 Recommended shape:
 
 ```md
 # Change Title
 
 Status: Planned | In Progress | Blocked | Verifying
-Owner: <human-or-agent-id>
+Owner: <human-or-role-id>
 
 ## Goal
 
@@ -115,17 +117,20 @@ Before merge, ensure any durable outcome is reflected in one or more of:
 
 Do not copy every review comment into documentation.
 
+Feedback that preserves the accepted intent stays in the same change and PR. Feedback that materially changes intent, acceptance criteria, architecture, or scope starts a new change instead (see Autonomous Change Execution in `WORKFLOW.md`).
+
 ## 8. Completing a Change
 
 Before merge/close:
 
 1. verify acceptance criteria
-2. fold durable behavior into `docs/specs/`
-3. fold durable technical truth into `docs/architecture/`
-4. create/update ADR only if durable rationale is worth preserving
-5. ensure tests capture important behavioral regressions
-6. update `docs/status/CURRENT.md` when project state materially changed
-7. remove `docs/changes/<change-id>/` from the working tree
+2. fold durable knowledge into the most appropriate current-truth surface: code, tests, module docs, `docs/specs/`, or `docs/architecture/`
+3. create/update ADR only if durable rationale is worth preserving
+4. ensure tests capture important behavioral regressions
+5. make `docs/status/CURRENT.md` correct for the target branch's expected post-merge state
+6. remove `docs/changes/<change-id>/` from the working tree
+
+Do not duplicate behavior in `docs/specs/` when code, tests, or module docs already state it clearly.
 
 Git preserves merged code and durable documentation history. The active `CHANGE.md` itself is not required to survive completion; this remains valid even when a squash merge removes its intermediate branch history. Do not move it to an archive directory.
 

@@ -10,7 +10,7 @@ The repository protocol is the shared contract. Core tools remain separate modul
 spec/       canonical protocol, roles, templates, version
 init/       bootstrap new repositories
 migrate/    semantic migration module (planned)
-check/      protocol validation module (planned)
+check/      validation module (GitHub branch protection check; protocol validation planned)
 ```
 
 Consumers such as dashboards or agent runners should live in separate repositories and consume the protocol rather than becoming part of core.
@@ -43,7 +43,14 @@ python -m pip install -r init/requirements.txt
 python init/init.py --target /path/to/repository
 ```
 
-The generated project declares the protocol version in `.ai-workflow.yml`.
+The initializer asks for the project name and the role IDs to configure (default: `architect`, `implementer`, `reviewer`). The generated project declares the protocol version in `.ai-workflow.yml`.
+
+## Test
+
+```bash
+python -m unittest discover -s init/tests
+python -m unittest discover -s check/tests
+```
 
 ## Dogfood This Monorepo
 

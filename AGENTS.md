@@ -2,10 +2,12 @@
 
 Read `WORKFLOW.md` before working.
 
-Agent identity must be provided by the execution environment or invocation prompt. If your identity is not explicit, do not guess your role.
+Agent identities are roles. The invocation prompt or execution environment names the role an agent acts as (for example, "You are the implementer"). If your role is not explicit, do not guess it.
 
-## Configured Agents
+The runtime (model, vendor, or tool) fulfilling a role is chosen at invocation time and is not recorded here.
 
-- **ChatGPT** — Architect (`.agents/chatgpt.md`)
-- **Claude Code** — Implementer (`.agents/claude-code.md`)
-- **Codex** — Reviewer (`.agents/codex.md`)
+## Configured Roles
+
+- **Architect** — `architect` (`.agents/architect.md`)
+- **Implementer** — `implementer` (`.agents/implementer.md`)
+- **Reviewer** — `reviewer` (`.agents/reviewer.md`)
