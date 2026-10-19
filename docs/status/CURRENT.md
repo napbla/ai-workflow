@@ -4,32 +4,33 @@ Updated: 2026-10-19
 
 ## Current Objective
 
-Design the protocol distinction between target-state Design, implementation Change, and concrete source changes.
+Adopt the accepted `Design → Change → Source change` lifecycle model as the target protocol design. Protocol implementation has not started yet.
 
 ## Active Designs
 
-- `docs/designs/design-change-source-lifecycle/DESIGN.md` — Proposed, owned by the `architect` role.
+- `docs/designs/design-change-source-lifecycle/DESIGN.md` — Accepted target-state design.
 
 ## Active Changes
 
-- None. This proposal intentionally separates Design from Change; implementation has not started.
+- None. Implementation Changes will be derived from the accepted Design after it is integrated.
 
 ## Human Attention
 
-- Confirm whether the revised `Design → Change → Source change` model is accepted.
+- None required for design content. Human merge of the exact final Design PR head is the acceptance confirmation boundary.
 
 ## Blockers / Risks
 
-- Current protocol does not yet define `docs/designs/`; this branch is proposing that semantic and must not be treated as implemented protocol behavior until the design is accepted and a Change implements it.
+- The accepted Design is target/planning truth, not evidence that the protocol implementation already supports `docs/designs/`, Design revisions, Realization Maps, or the new branch semantics.
 
 ## Next
 
-- No source/protocol implementation is part of this Design PR.
+- Derive one or more implementation Changes from the accepted Design.
+- Keep each Change bound to the accepted Design revision it implements.
 
 ## Current Truth References
 
 - Current specs: `docs/specs/`
 - Current architecture: `docs/architecture/`
-- Proposed/accepted target designs: `docs/designs/` on this design branch
+- Accepted target designs: `docs/designs/`
 - Active implementation changes: `docs/changes/`
-- Durable decisions: `docs/adr/`
+- Durable cross-cutting decisions: `docs/adr/`
