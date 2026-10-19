@@ -140,7 +140,10 @@ Automation expectations:
 - Credentials must not be stored in repository files.
 - Branch policy must prevent that credential/runtime from updating `main` or `develop` directly.
 - Review and CI feedback should be consumed automatically when the runtime supports it.
-- The implementer remains responsible for iterating on actionable review/CI feedback until the PR is clean or an issue exceeds its authority/capability.
+- Human PR comments/reviews are first-class feedback: any actionable human feedback returns the PR to the implementation loop until it is addressed and re-verified.
+- The implementer remains responsible for iterating on actionable automated-review, CI, and human-review feedback until the PR is clean or an issue exceeds its authority/capability.
+- Human feedback that changes intent, acceptance criteria, architecture, or scope must be materialized into the active change/current truth before implementation continues when that information must survive the PR conversation.
+- If human feedback conflicts with current specs/architecture or is ambiguous/consequential, escalate for clarification instead of guessing.
 - Human attention is requested only for ambiguity, consequential decisions, blocked credentials/infrastructure, or the final merge decision.
 - The terminal state for autonomous execution is `ready-for-human-merge`, not automatic merge into `develop` or `main`.
 - Runtime-specific automation mechanisms (for example Claude Code review/fix loops or hooks) are adapters; the protocol defines the lifecycle contract rather than requiring a particular vendor feature.
@@ -157,6 +160,8 @@ Automation expectations:
 - [ ] PR ownership supports capability-aware handoff.
 - [ ] After human intent finalization, the normal workflow can run autonomously through implementation, tests, feature-branch push, PR creation/update, review-feedback iteration, and final verification until `ready-for-human-merge`.
 - [ ] Human interaction is not required during the autonomous loop unless risk, ambiguity, authority, credentials, or infrastructure require escalation.
+- [ ] Actionable human PR comments automatically re-open the implementation loop: sync feedback → implement → test → push → re-verify until the PR is ready for human merge again.
+- [ ] Durable intent/scope decisions made in PR discussion are materialized into repository state rather than existing only as PR comments.
 - [ ] Runtime credentials are never stored in repository state and cannot directly update protected integration branches.
 - [ ] Reviewer workflow has a fallback when PR publishing is unavailable.
 - [ ] Completion rules require appropriate current truth instead of mandatory `docs/specs/` duplication.
