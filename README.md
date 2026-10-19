@@ -9,6 +9,7 @@ The repository protocol is the shared contract. Core tools remain separate modul
 ```text
 spec/       canonical protocol, roles, templates, version
 init/       bootstrap new repositories
+adapters/   runtime-specific enforcement of protocol policy (e.g. Claude Code hooks)
 migrate/    semantic migration module (planned)
 check/      protocol validation module (planned)
 ```
@@ -20,10 +21,10 @@ Consumers such as dashboards or agent runners should live in separate repositori
 ```text
               spec
             /  |  \
-         init migrate check
+         init migrate check adapters
 ```
 
-`init`, `migrate`, and `check` may depend on `spec`. They should not depend on one another's internals.
+`init`, `migrate`, `check`, and `adapters` may depend on `spec`. They should not depend on one another's internals.
 
 ## Principles
 
@@ -43,7 +44,14 @@ python -m pip install -r init/requirements.txt
 python init/init.py --target /path/to/repository
 ```
 
-The generated project declares the protocol version in `.ai-workflow.yml`.
+The initializer asks for the project name and the role IDs to configure (default: `architect`, `implementer`, `reviewer`). The generated project declares the protocol version in `.ai-workflow.yml`.
+
+## Test
+
+```bash
+python -m unittest discover -s init/tests
+python -m unittest discover -s adapters/claude-code/tests
+```
 
 ## Dogfood This Monorepo
 
