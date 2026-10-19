@@ -127,7 +127,7 @@ Before merge/close:
 2. fold durable knowledge into the most appropriate current-truth surface: code, tests, module docs, `docs/specs/`, or `docs/architecture/`
 3. create/update ADR only if durable rationale is worth preserving
 4. ensure tests capture important behavioral regressions
-5. make `docs/status/CURRENT.md` correct for the target branch's expected post-merge state
+5. make `docs/status/CURRENT.md` merge-safe: true on the target branch after the merge, and still true after the next `develop` → `main` merge, with no PR readiness, pending review, or pending release state (see Project Status in `WORKFLOW.md`)
 6. remove `docs/changes/<change-id>/` from the working tree
 
 Do not duplicate behavior in `docs/specs/` when code, tests, or module docs already state it clearly.

@@ -24,7 +24,7 @@ A first v2 attempt (closed PR #2) also enforced the protected branch policy with
 5. **Autonomous execution ends at `ready-for-human-merge`.** Feedback that refines accepted intent stays in the PR loop; feedback that changes intent, acceptance criteria, architecture, or scope starts a new change.
 6. **Release from `develop` to `main` is a normal reviewed PR**; no separate release artifact.
 7. **Completion folds knowledge into the most appropriate current-truth surface** rather than always `docs/specs/`.
-8. **Status is branch-sensitive** and must be correct for the target branch at merge time.
+8. **Status is merge-safe current truth.** Status stays branch-sensitive: a feature branch's status may describe that branch's own active change. Whatever merges into `develop` or `main` must already be true there after the merge. PR readiness, pending review, pending merge or release, and ahead/behind comparisons between branches stay in the PR or active change.
 
 ## Consequences
 

@@ -160,6 +160,8 @@ The dashboard should emphasize:
 
 Do not maintain status history manually by default; Git preserves prior versions.
 
+Status holds durable current truth only. Look in the PR or the active change for PR readiness, pending review, or a pending release; these are deliberately kept out of `CURRENT.md` so that merging never makes it stale.
+
 ## 10. Human replacement test
 
 A replacement operator should be able to enter the project and read:

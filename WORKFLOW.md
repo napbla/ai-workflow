@@ -137,7 +137,7 @@ Before a completed feature merges into `develop`:
 1. verify acceptance criteria;
 2. fold durable knowledge into the most appropriate current-truth surface;
 3. remove the active change artifact;
-4. make branch-local status match the expected post-merge state of `develop`;
+4. make `docs/status/CURRENT.md` merge-safe (see Project Status): valid on `develop` after this merge and on `main` after `develop` is next merged into it;
 5. merge through PR review.
 
 Add `DESIGN.md` only when the change is complex enough to benefit from it.
@@ -279,13 +279,15 @@ It should make it possible for a human replacement to quickly answer:
 
 Derive status from repository evidence. Do not infer it from chat history. Do not maintain status archives by default; Git preserves prior versions.
 
-Status is branch-sensitive:
+### Merge-safe status
 
-- on `main`, it describes the stable integrated state;
-- on `develop`, it describes the integration state;
-- on a feature branch, it describes that branch's active change and review state.
+`CURRENT.md` holds durable current truth, not merge coordination state. Content that merges into a protected branch must already be true on that branch after the merge, so merging alone never makes status stale.
 
-A branch being merged must carry status that is correct for the target branch after the merge, so that merging does not leave the target's status stale.
+- On a feature branch, status may name that branch's active change. Before the branch merges into `develop`, rewrite status to what will be true on `develop` after the merge.
+- On `develop` and `main`, status describes the project as integrated. It must not depend on which of the two branches holds it, so a `develop` → `main` merge leaves it valid on `main`.
+- Transient lifecycle state does not belong in `CURRENT.md`: PR readiness, pending review, pending merge or release, how far one branch is ahead of or behind another (for example "`main` is still on the previous version"), or "merge/release X next". Record it in the active change or the PR.
+
+Before merging, check each statement: would it become false solely because this merge, or the next `develop` → `main` merge, happened? If so, rewrite it as durable truth or move it to the PR or active change.
 
 ## Human Handoff Requirement
 
