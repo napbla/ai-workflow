@@ -1,6 +1,6 @@
 # Design → Change → Source Lifecycle
 
-Status: Proposed
+Status: Accepted
 Owner: architect
 
 ## Goal
@@ -137,6 +137,8 @@ A Design PR is intentionally mutable. During review, intent, architecture, scope
 
 Human acceptance is the authority boundary for the target design.
 
+Acceptance is bound to the **exact final Design PR head**. The architect may stage `Status: Accepted` during the final fold, but the human's approval/merge of that exact head is the effective confirmation. Any later push that changes Design semantics makes the prior acceptance stale and requires human reconfirmation before merge. Non-semantic repository-host metadata does not alter the Design head and therefore does not affect acceptance.
+
 ### Brand-new projects
 
 Every brand-new project must have an initial Design before implementation begins. The Design is the guide from which the first Change(s) are derived.
@@ -191,19 +193,22 @@ on:
 feature/<change-id>
 ```
 
-A Change derived from a Design must reference it explicitly.
+A Change derived from a Design must reference both the Design path and the accepted Design revision it implements. Use the merged Git commit that contains the accepted Design as the revision binding.
 
 Example:
 
 ```md
 Design: docs/designs/data-provider/DESIGN.md
+Design-Revision: <accepted-design-commit-sha>
 
 ## Goal
-Implement the provider contract defined by the accepted design.
+Implement the provider contract defined by that accepted design revision.
 
 ## Acceptance Criteria
 ...
 ```
+
+If an accepted Design is later revised, the architect must revalidate **every incomplete Change** mapped to that Design. A Change may continue only when its identity and implementation remain valid against the new accepted revision; otherwise close/restart it or revise it according to the normal identity rules. This prevents sibling Changes from silently implementing different Design revisions.
 
 ## Change Identity
 
@@ -276,7 +281,7 @@ The Design maintains a Realization Map containing:
 - the tests protecting those areas;
 - the current architecture/spec/module docs that describe the implemented behavior.
 
-Each merged Change updates that map when it materially changes the realization.
+Every source change that moves, replaces, removes, or materially changes a source area referenced by a Design must update all affected Design Realization Maps and any `docs/designs/INDEX.md` entries before final review — even when that source change is a small fix, a direct Change, or a Change derived from another Design.
 
 The map is current traceability, not a changelog. It should describe what implements the Design now, not every path that ever did.
 
@@ -291,6 +296,8 @@ When all required Changes for a Design are complete:
 5. keep the Design while it remains a useful current conceptual map of the implemented system.
 
 A realized Design is **not an archive**. It remains because it answers a current question: "what design does this code implement?" and gives agents an entry point into the relevant source instead of forcing repo-wide rediscovery.
+
+When a later Design supersedes only part of a realized Design, the old Design must be updated or split so that it describes only the scope it still realizes. Its Realization Map must drop superseded source areas, and the index must not leave overlapping entries that present obsolete behavior as current.
 
 Remove a Design when it is fully superseded or no longer needed to understand the current system. Before removal, ensure its still-relevant knowledge has moved into the replacement Design/current architecture/spec/module docs. Git preserves the historical artifact.
 
@@ -469,12 +476,3 @@ Implementation of this Design should update:
   - generate the required Design directory/guidance if protocol review concludes it is part of the repository contract.
 
 Because this adds a new canonical artifact class and branch lifecycle, implementation review should explicitly decide whether it is a protocol-v2 clarification or requires the next protocol version.
-
-## Decisions Captured From Human Review
-
-1. A brand-new project must have a Design before implementation.
-2. Design and Change are separate primitives.
-3. The relationship is `Design → Change → Source change`.
-4. A Design may produce multiple Changes.
-5. Future-state Design must not be mistaken for current implemented truth.
-6. With Design now a separate primitive, `design/<design-id>` has a real semantic purpose.
