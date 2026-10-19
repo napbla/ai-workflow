@@ -4,27 +4,33 @@ Updated: 2026-10-19
 
 ## Current Objective
 
-No objective is in progress. The project uses protocol v2: role-based agent identities with runtimes assigned at invocation, `main` as the stable branch and `develop` as the integration branch with work on `feature/<change-id>` branches, autonomous change execution up to `ready-for-human-merge`, merge-safe current status, and GitHub branch protection of `main` and `develop` as the enforcement boundary, verified by `check/branch_protection.py`.
+Adopt the accepted `Design → Change → Source change` lifecycle model as the target protocol design. Protocol implementation has not started yet.
+
+## Active Designs
+
+- `docs/designs/design-change-source-lifecycle/DESIGN.md` — Accepted target-state design.
 
 ## Active Changes
 
-- None.
+- None. Implementation Changes will be derived from the accepted Design after it is integrated.
 
 ## Human Attention
 
-- None.
+- None required for design content. Human merge of the exact final Design PR head is the acceptance confirmation boundary.
 
 ## Blockers / Risks
 
-- None. `check/branch_protection.py`, run with the implementer's credential on 2026-10-19, exited 0: an active ruleset with no bypass actors requires a PR and blocks force pushes and deletion on both `main` and `develop`. Re-run it whenever agent credentials or rulesets change.
+- The accepted Design is target/planning truth, not evidence that the protocol implementation already supports `docs/designs/`, Design revisions, Realization Maps, or the new branch semantics.
 
 ## Next
 
-- Define the next objective as an active change on a feature branch from `develop`.
+- Derive one or more implementation Changes from the accepted Design.
+- Keep each Change bound to the accepted Design revision it implements.
 
 ## Current Truth References
 
-- Specs: `docs/specs/`
-- Architecture: `docs/architecture/`
-- Active changes: `docs/changes/`
-- Durable decisions: `docs/adr/`
+- Current specs: `docs/specs/`
+- Current architecture: `docs/architecture/`
+- Accepted target designs: `docs/designs/`
+- Active implementation changes: `docs/changes/`
+- Durable cross-cutting decisions: `docs/adr/`
