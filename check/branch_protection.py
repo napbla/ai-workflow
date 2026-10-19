@@ -27,8 +27,11 @@ NO_FORCE_PUSH = "force pushes blocked"
 NO_DELETION = "deletion blocked"
 REQUIREMENTS = (PULL_REQUEST, NO_FORCE_PUSH, NO_DELETION)
 
-# `pull_requests_only` still forces changes through a PR, so only these count as a bypass.
+# Values of a ruleset's `current_user_can_bypass`. `pull_requests_only` still forces changes through a PR.
+# Any other value, or an unreadable ruleset, leaves the bypass status unknown.
 BYPASS_ALWAYS = {"always", "exempt"}
+BYPASS_NEVER = {"never", "pull_requests_only"}
+PAGE_SIZE = 100
 RULESET_RULES = {"pull_request": PULL_REQUEST, "non_fast_forward": NO_FORCE_PUSH, "deletion": NO_DELETION}
 
 PROTECTED, UNPROTECTED, UNVERIFIABLE = "protected", "not protected", "unverifiable"
@@ -76,54 +79,77 @@ def github_fetch(api_url: str, token: str | None) -> Fetch:
     return fetch
 
 
-def ruleset_requirements(repo: str, branch: str, fetch: Fetch, notes: list[str]) -> set[str] | None:
-    """Requirements met by active rulesets, or None when the rules cannot be read."""
-    status, rules = fetch(f"/repos/{repo}/rules/branches/{branch}")
-    if status != 200 or not isinstance(rules, list):
-        notes.append(f"rulesets unreadable (HTTP {status})")
-        return None
+def fetch_rules(repo: str, branch: str, fetch: Fetch) -> tuple[int, list[Any] | None]:
+    """All active rules for a branch, following pagination."""
+    rules: list[Any] = []
+    page = 1
+    while True:
+        status, batch = fetch(f"/repos/{repo}/rules/branches/{branch}?per_page={PAGE_SIZE}&page={page}")
+        if status != 200 or not isinstance(batch, list):
+            return status, None
+        rules += batch
+        if len(batch) < PAGE_SIZE:
+            return status, rules
+        page += 1
 
-    bypassable: dict[int, bool] = {}
+
+def ruleset_requirements(repo: str, branch: str, fetch: Fetch, notes: list[str]) -> tuple[set[str], bool]:
+    """Requirements met by active rulesets, and whether every applicable ruleset was verifiable."""
+    status, rules = fetch_rules(repo, branch, fetch)
+    if rules is None:
+        notes.append(f"rulesets unreadable (HTTP {status})")
+        return set(), False
+
+    bypass: dict[Any, str | None] = {}
     met: set[str] = set()
     for rule in rules:
         requirement = RULESET_RULES.get(rule.get("type"))
         if requirement is None:
             continue
         ruleset_id = rule.get("ruleset_id")
-        if ruleset_id not in bypassable:
+        if ruleset_id not in bypass:
             ruleset_status, ruleset = fetch(f"/repos/{repo}/rulesets/{ruleset_id}")
-            bypassable[ruleset_id] = ruleset_status == 200 and isinstance(ruleset, dict) and ruleset.get("current_user_can_bypass") in BYPASS_ALWAYS
-            if bypassable[ruleset_id]:
+            value = ruleset.get("current_user_can_bypass") if ruleset_status == 200 and isinstance(ruleset, dict) else None
+            bypass[ruleset_id] = value
+            if value in BYPASS_ALWAYS:
                 notes.append(f"ruleset {ruleset_id} can be bypassed by the checking credential")
-        if not bypassable[ruleset_id]:
+            elif value not in BYPASS_NEVER:
+                notes.append(f"ruleset {ruleset_id} bypass status unknown (HTTP {ruleset_status})")
+        if bypass[ruleset_id] in BYPASS_NEVER:
             met.add(requirement)
-    return met
+    return met, all(value in BYPASS_ALWAYS | BYPASS_NEVER for value in bypass.values())
 
 
-def classic_requirements(repo: str, branch: str, fetch: Fetch, notes: list[str]) -> set[str] | None:
-    """Requirements met by classic branch protection, or None when it cannot be read."""
+def classic_requirements(repo: str, branch: str, fetch: Fetch, notes: list[str]) -> tuple[set[str], bool]:
+    """Requirements met by classic branch protection, and whether it was readable."""
     status, protection = fetch(f"/repos/{repo}/branches/{branch}/protection")
     if status == 404 and isinstance(protection, dict) and protection.get("message") == "Branch not protected":
-        return set()
+        return set(), True
     if status != 200 or not isinstance(protection, dict):
         notes.append(f"classic branch protection unreadable (HTTP {status})")
-        return None
+        return set(), False
 
     if not (protection.get("enforce_admins") or {}).get("enabled"):
         notes.append("classic branch protection does not apply to administrators")
-        return set()
+        return set(), True
 
     met: set[str] = set()
-    if protection.get("required_pull_request_reviews"):
-        met.add(PULL_REQUEST)
+    reviews = protection.get("required_pull_request_reviews")
+    if reviews:
+        allowances = reviews.get("bypass_pull_request_allowances") or {}
+        if any(allowances.get(kind) for kind in ("users", "teams", "apps")):
+            notes.append("classic branch protection lets some actors bypass the pull request requirement")
+        else:
+            met.add(PULL_REQUEST)
     if not (protection.get("allow_force_pushes") or {}).get("enabled"):
         met.add(NO_FORCE_PUSH)
     if not (protection.get("allow_deletions") or {}).get("enabled"):
         met.add(NO_DELETION)
-    return met
+    return met, True
 
 
 def check_branch(repo: str, branch: str, fetch: Fetch) -> BranchResult:
+    """Check one branch of a repository already known to be readable (see check_repository)."""
     status, _ = fetch(f"/repos/{repo}/branches/{branch}")
     if status == 404:
         return BranchResult(branch, UNPROTECTED, list(REQUIREMENTS), ["branch does not exist on the repository host"])
@@ -132,11 +158,20 @@ def check_branch(repo: str, branch: str, fetch: Fetch) -> BranchResult:
 
     notes: list[str] = []
     sources = [ruleset_requirements(repo, branch, fetch, notes), classic_requirements(repo, branch, fetch, notes)]
-    met = set().union(*(source for source in sources if source is not None))
+    met = set().union(*(source_met for source_met, _ in sources))
     missing = [requirement for requirement in REQUIREMENTS if requirement not in met]
     if not missing:
         return BranchResult(branch, PROTECTED, [], notes)
-    return BranchResult(branch, UNVERIFIABLE if None in sources else UNPROTECTED, missing, notes)
+    verified = all(source_verified for _, source_verified in sources)
+    return BranchResult(branch, UNPROTECTED if verified else UNVERIFIABLE, missing, notes)
+
+
+def check_repository(repo: str, fetch: Fetch) -> str | None:
+    """Error when the repository is not readable. GitHub answers 404 for private repositories the credential cannot see."""
+    status, _ = fetch(f"/repos/{repo}")
+    if status != 200:
+        return f"repository {repo} not found or not accessible with this credential (HTTP {status})"
+    return None
 
 
 def require_credential(result: BranchResult) -> BranchResult:
@@ -201,6 +236,10 @@ def main(argv: list[str] | None = None, fetch: Fetch | None = None) -> int:
     fetch = fetch or github_fetch(args.api_url, token)
 
     try:
+        error = check_repository(repo, fetch)
+        if error:
+            print(f"{error}\n\n{REMEDIATION}", file=sys.stderr)
+            return EXIT_CODES[UNVERIFIABLE]
         results = [check_branch(repo, branch, fetch) for branch in PROTECTED_BRANCHES]
     except (OSError, ValueError) as exc:
         print(f"GitHub API request failed: {exc}\n\n{REMEDIATION}", file=sys.stderr)

@@ -19,7 +19,9 @@ Each branch counts as protected when active rulesets and/or classic branch prote
 - require a pull request;
 - block force pushes;
 - block deletion;
-- cannot be bypassed by the checking credential. A ruleset whose `current_user_can_bypass` is `always` or `exempt` is ignored, and classic protection counts only with "Do not allow bypassing the above settings" (`enforce_admins`) enabled.
+- cannot be bypassed by the checking credential:
+  - A ruleset counts only when its `current_user_can_bypass` is `never` or `pull_requests_only`. A ruleset showing `always` or `exempt` is ignored. One that is unreadable or shows an unknown value makes the result unverifiable.
+  - Classic protection counts only with "Do not allow bypassing the above settings" (`enforce_admins`) enabled. Its PR requirement counts only when no user, team, or app is allowed to bypass required pull requests.
 
 Run the check with the same credential the agent runtime uses, so the bypass evaluation applies to that credential. The token is read from `GH_TOKEN` or `GITHUB_TOKEN`. It is never printed and must never be committed. A fine-grained token needs Administration read-only to read classic protection.
 
@@ -27,7 +29,7 @@ Run the check with the same credential the agent runtime uses, so the bypass eva
 | --- | --- | --- |
 | `0` | Both branches protected for the checking credential | Continue normal autonomous execution |
 | `1` | At least one branch is missing or not fully protected | Human setup blocker: configure protection |
-| `2` | Protection could not be verified (no credential, insufficient permission, API failure, unknown repository) | Human setup blocker: fix access and re-run |
+| `2` | Protection could not be verified (no credential, insufficient permission, unknown bypass status, API failure, repository not found or not accessible) | Human setup blocker: fix access and re-run |
 
 On exit `1` or `2` the output names the missing requirements and the remediation steps. Agents record it under Human Attention in `docs/status/CURRENT.md` and must not claim the branches are protected.
 

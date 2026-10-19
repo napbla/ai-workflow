@@ -30,12 +30,19 @@ FULL_RULES = [
 ]
 
 
-def fake_fetch(branches: dict[str, dict[str, tuple[int, Any]]], rulesets: dict[int, tuple[int, Any]] | None = None):
-    """Build a fetch over per-branch responses: keys `branch`, `rules`, `classic`."""
+def fake_fetch(
+    branches: dict[str, dict[str, Any]],
+    rulesets: dict[int, tuple[int, Any]] | None = None,
+    repo: tuple[int, Any] = (200, {"full_name": REPO}),
+):
+    """Build a fetch over per-branch responses: keys `branch`, `rules` (one response or a list of pages), `classic`."""
     calls: list[str] = []
 
     def fetch(path: str) -> tuple[int, Any]:
         calls.append(path)
+        path, _, query = path.partition("?")
+        if path == f"/repos/{REPO}":
+            return repo
         prefix = f"/repos/{REPO}/"
         assert path.startswith(prefix), path
         rest = path[len(prefix):]
@@ -43,7 +50,11 @@ def fake_fetch(branches: dict[str, dict[str, tuple[int, Any]]], rulesets: dict[i
             return (rulesets or {}).get(int(rest.split("/")[1]), (200, {"current_user_can_bypass": "never"}))
         kind, _, tail = rest.partition("/")
         if kind == "rules":
-            return branches[tail.split("/", 1)[1]].get("rules", (200, []))
+            rules = branches[tail.split("/", 1)[1]].get("rules", (200, []))
+            if isinstance(rules, list):
+                page = int(dict(part.split("=") for part in query.split("&"))["page"])
+                return rules[page - 1]
+            return rules
         branch, _, sub = tail.partition("/")
         responses = branches[branch]
         if sub == "protection":
@@ -100,6 +111,42 @@ class CheckBranchTest(unittest.TestCase):
     def test_pull_request_only_bypass_still_counts_as_protected(self) -> None:
         result = self.check({"rules": (200, FULL_RULES)}, {7: (200, {"current_user_can_bypass": "pull_requests_only"})})
         self.assertEqual(result.state, bp.PROTECTED)
+
+    def test_unknown_ruleset_bypass_status_is_unverifiable(self) -> None:
+        for response in ((403, {"message": "Forbidden"}), (500, None), (200, {}), (200, {"current_user_can_bypass": "new-value"})):
+            result = self.check({"rules": (200, FULL_RULES), "classic": NOT_PROTECTED}, {7: response})
+            self.assertEqual(result.state, bp.UNVERIFIABLE, response)
+            self.assertIn(f"ruleset 7 bypass status unknown (HTTP {response[0]})", result.notes)
+
+    def test_unknown_ruleset_bypass_does_not_hide_full_classic_protection(self) -> None:
+        result = self.check({"rules": (200, FULL_RULES), "classic": (200, FULL_CLASSIC)}, {7: (403, None)})
+        self.assertEqual(result.state, bp.PROTECTED)
+
+    def test_classic_pull_request_bypass_allowances_do_not_count(self) -> None:
+        for kind in ("users", "teams", "apps"):
+            reviews = {"required_approving_review_count": 1, "bypass_pull_request_allowances": {kind: [{"login": "someone"}]}}
+            result = self.check({"classic": (200, {**FULL_CLASSIC, "required_pull_request_reviews": reviews})})
+            self.assertEqual(result.state, bp.UNPROTECTED, kind)
+            self.assertEqual(result.missing, [bp.PULL_REQUEST])
+            self.assertIn("classic branch protection lets some actors bypass the pull request requirement", result.notes)
+
+    def test_empty_bypass_allowances_still_count(self) -> None:
+        reviews = {"bypass_pull_request_allowances": {"users": [], "teams": [], "apps": []}}
+        result = self.check({"classic": (200, {**FULL_CLASSIC, "required_pull_request_reviews": reviews})})
+        self.assertEqual(result.state, bp.PROTECTED)
+
+    def test_rules_are_read_across_pages(self) -> None:
+        filler = [{"type": "required_signatures", "ruleset_id": 1}] * bp.PAGE_SIZE
+        pages = [(200, filler), (200, FULL_RULES)]
+        fetch = fake_fetch({"main": {"rules": pages}})
+        result = bp.check_branch(REPO, "main", fetch)
+        self.assertEqual(result.state, bp.PROTECTED)
+        self.assertTrue(any("page=2" in call for call in fetch.calls))
+
+    def test_unreadable_later_page_is_unverifiable(self) -> None:
+        filler = [{"type": "required_signatures", "ruleset_id": 1}] * bp.PAGE_SIZE
+        result = self.check({"rules": [(200, filler), (502, None)]})
+        self.assertEqual(result.state, bp.UNVERIFIABLE)
 
     def test_unreadable_classic_protection_is_unverifiable(self) -> None:
         result = self.check({"classic": FORBIDDEN})
@@ -164,6 +211,14 @@ class MainTest(unittest.TestCase):
         branches = {"main": {"classic": FORBIDDEN}, "develop": {}}
         code, _, _ = self.run_main(fake_fetch(branches))
         self.assertEqual(code, 1)
+
+    def test_inaccessible_repository_is_unverifiable_not_unprotected(self) -> None:
+        fetch = fake_fetch(both(branch=(404, {"message": "Not Found"})), repo=(404, {"message": "Not Found"}))
+        code, out, err = self.run_main(fetch)
+        self.assertEqual(code, 2)
+        self.assertIn("not found or not accessible", err)
+        self.assertIn("HUMAN SETUP BLOCKER", err)
+        self.assertEqual(out, "")
 
     def test_network_failure_is_unverifiable(self) -> None:
         def fetch(path: str) -> tuple[int, Any]:
