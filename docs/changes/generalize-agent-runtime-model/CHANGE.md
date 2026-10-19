@@ -107,6 +107,44 @@ Do not require every completed behavior change to duplicate itself in `docs/spec
 
 A branch being merged must carry status suitable for the target's expected post-merge state so merge does not immediately make status stale.
 
+## Autonomous Change Execution
+
+Once the human finalizes a change intent and the Architect materializes the active change, the default path should require no further human coordination until a PR is ready for human merge review.
+
+Target loop:
+
+```text
+Human finalizes intent
+        ↓
+Architect materializes change on feature branch
+        ↓
+Implementer runtime takes ownership
+        ↓
+implement → test → commit → push feature branch
+        ↓
+create/update PR targeting develop
+        ↓
+reviewer runs
+        ↓
+actionable findings / CI failures?
+     yes ↓                 no
+ Implementer fixes          ↓
+ commit + push          final verification
+        └──────────────→     ↓
+                       ready-for-human-merge
+```
+
+Automation expectations:
+
+- The implementer may use a repository-scoped credential/token to push its feature branch and create/update its PR.
+- Credentials must not be stored in repository files.
+- Branch policy must prevent that credential/runtime from updating `main` or `develop` directly.
+- Review and CI feedback should be consumed automatically when the runtime supports it.
+- The implementer remains responsible for iterating on actionable review/CI feedback until the PR is clean or an issue exceeds its authority/capability.
+- Human attention is requested only for ambiguity, consequential decisions, blocked credentials/infrastructure, or the final merge decision.
+- The terminal state for autonomous execution is `ready-for-human-merge`, not automatic merge into `develop` or `main`.
+- Runtime-specific automation mechanisms (for example Claude Code review/fix loops or hooks) are adapters; the protocol defines the lifecycle contract rather than requiring a particular vendor feature.
+
 ## Acceptance Criteria
 
 - [ ] Protocol documents the `main` / `develop` / feature branch model.
@@ -117,6 +155,9 @@ A branch being merged must carry status suitable for the target's expected post-
 - [ ] Runtime assignment to roles is invocation/runtime state.
 - [ ] Role responsibility is separated from runtime capabilities/permissions.
 - [ ] PR ownership supports capability-aware handoff.
+- [ ] After human intent finalization, the normal workflow can run autonomously through implementation, tests, feature-branch push, PR creation/update, review-feedback iteration, and final verification until `ready-for-human-merge`.
+- [ ] Human interaction is not required during the autonomous loop unless risk, ambiguity, authority, credentials, or infrastructure require escalation.
+- [ ] Runtime credentials are never stored in repository state and cannot directly update protected integration branches.
 - [ ] Reviewer workflow has a fallback when PR publishing is unavailable.
 - [ ] Completion rules require appropriate current truth instead of mandatory `docs/specs/` duplication.
 - [ ] Status semantics prevent pre-merge state becoming stale on the target branch.
