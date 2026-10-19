@@ -139,6 +139,40 @@ class DeniedCommandsTest(RepoTestCase):
             self.assertDenied(command)
         self.assertAllowed("git -c user.name=x push origin feature/x")
 
+    def test_attached_branch_creation_arguments_are_checked(self) -> None:
+        for command in [
+            "git checkout -bfeature/y origin/develop",
+            "git switch -cfeature/y origin/main",
+            "git switch --create=feature/y origin/develop",
+            "git switch --force-create=feature/y origin/main",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git checkout -bfeature/y --no-track origin/develop")
+        self.assertAllowed("git switch --create=feature/y")
+
+    def test_configured_remote_push_refspec_is_checked(self) -> None:
+        git(self.repo, "config", "remote.origin.push", "HEAD:refs/heads/main")
+        self.assertDenied("git push origin")
+        self.assertDenied("git push")
+        self.assertAllowed("git push origin feature/x")
+
+    def test_configured_mirror_remote_is_denied(self) -> None:
+        git(self.repo, "config", "remote.backup.mirror", "true")
+        self.assertDenied("git push backup")
+
+    def test_repository_selected_by_global_options_is_used(self) -> None:
+        with tempfile.TemporaryDirectory() as other_tmp:
+            other = Path(other_tmp)
+            git(other, "init", "-q", "-b", "main")
+            git(other, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+            for command in [
+                f"git --git-dir={other}/.git --work-tree={other} push",
+                f"git --git-dir {other}/.git push origin",
+                f"git -C {other} push",
+            ]:
+                self.assertDenied(command)
+        self.assertAllowed("git push")
+
     def test_attached_upstream_option_is_denied(self) -> None:
         self.assertDenied("git branch -uorigin/develop")
         self.assertAllowed("git branch -uorigin/feature/x")

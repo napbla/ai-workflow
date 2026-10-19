@@ -25,6 +25,7 @@ SHELL_COMMAND_FLAG = re.compile(r"^-[a-zA-Z]*c[a-zA-Z]*$")
 WRAPPERS = {"command", "env", "exec", "nohup", "sudo", "time"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 # git global options that consume the following token.
+GIT_REPO_OPTIONS = {"-C", "--git-dir", "--work-tree"}
 GIT_GLOBAL_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix", "--config-env"}
 PUSH_WITH_VALUE = {"--repo", "-o", "--push-option", "--receive-pack", "--exec"}
 
@@ -53,16 +54,17 @@ def is_protected(name: str) -> bool:
     return name in PROTECTED or "*" in name
 
 
-def git_output(cwd: str | None, *args: str) -> str | None:
+def git_output(repo: list[str], *args: str) -> str | None:
+    """Run git against the repository selected by `repo` (git global options such as -C/--git-dir)."""
     try:
-        result = subprocess.run(["git", *args], cwd=cwd or None, capture_output=True, text=True, timeout=5)
+        result = subprocess.run(["git", *repo, *args], capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def current_branch(cwd: str | None) -> str | None:
-    name = git_output(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+def current_branch(repo: list[str]) -> str | None:
+    name = git_output(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
     return name or None
 
 
@@ -160,7 +162,26 @@ def strip_prefix(tokens: list[str]) -> list[str]:
     return tokens[index:]
 
 
-def check_push(args: list[str], cwd: str | None, push_default: str | None = None) -> str | None:
+def refspec_destination(refspec: str, repo: list[str]) -> str:
+    source, colon, destination = refspec.lstrip("+").partition(":")
+    if not colon:
+        destination = source
+    if branch_name(destination) in {"HEAD", "@"}:
+        destination = current_branch(repo) or destination
+    return branch_name(destination)
+
+
+def push_remote(branch: str | None, repo: list[str]) -> str:
+    """Remote a refspec-less `git push` uses, following Git's lookup order."""
+    candidates = [f"branch.{branch}.pushRemote", "remote.pushDefault", f"branch.{branch}.remote"] if branch else ["remote.pushDefault"]
+    for key in candidates:
+        value = git_output(repo, "config", "--get", key)
+        if value:
+            return value
+    return "origin"
+
+
+def check_push(args: list[str], repo: list[str], push_default: str | None = None) -> str | None:
     positionals: list[str] = []
     index = 0
     while index < len(args):
@@ -179,13 +200,19 @@ def check_push(args: list[str], cwd: str | None, push_default: str | None = None
 
     refspecs = positionals[1:]
     if not refspecs:
-        if (push_default or git_output(cwd, "config", "--get", "push.default")) == "matching":
+        branch = current_branch(repo)
+        remote = positionals[0] if positionals else push_remote(branch, repo)
+        if (git_output(repo, "config", "--type=bool", "--get", f"remote.{remote}.mirror") or "") == "true":
+            return f"remote `{remote}` is configured to mirror, which pushes every ref including protected branches"
+        for configured in (git_output(repo, "config", "--get-all", f"remote.{remote}.push") or "").splitlines():
+            if is_protected(refspec_destination(configured, repo)):
+                return f"configured refspec `remote.{remote}.push={configured}` targets a protected branch"
+        if (push_default or git_output(repo, "config", "--get", "push.default")) == "matching":
             return "`git push` with push.default=matching would push every matching branch, including protected ones"
-        branch = current_branch(cwd)
         if branch in PROTECTED:
             return f"`git push` without a refspec would push the protected branch `{branch}`"
         if branch:
-            merge = git_output(cwd, "config", "--get", f"branch.{branch}.merge")
+            merge = git_output(repo, "config", "--get", f"branch.{branch}.merge")
             if merge and is_protected(branch_name(merge)):
                 return f"`git push` without a refspec would push `{branch}` to its protected upstream `{branch_name(merge)}`"
         return None
@@ -193,12 +220,7 @@ def check_push(args: list[str], cwd: str | None, push_default: str | None = None
     for refspec in refspecs:
         if refspec.lstrip("+") == ":":
             return f"matching refspec `{refspec}` would push every branch that exists on the remote, including protected ones"
-        source, _, destination = refspec.partition(":")
-        if not _:
-            destination = source
-        if branch_name(destination) in {"HEAD", "@"}:
-            destination = current_branch(cwd) or destination
-        destination = branch_name(destination)
+        destination = refspec_destination(refspec, repo)
         if is_protected(destination):
             return f"refspec `{refspec}` targets protected branch `{destination}`"
     return None
@@ -239,7 +261,22 @@ def check_tracking_start_point(args: list[str], create_flags: set[str]) -> str |
     return None
 
 
+def split_attached(args: list[str], create_flags: set[str]) -> list[str]:
+    """Normalize `-bname` and `--create=name` into separate flag and value tokens."""
+    normalized: list[str] = []
+    for arg in args:
+        long_flag = arg.split("=", 1)[0]
+        if arg.startswith("--") and "=" in arg and long_flag in create_flags:
+            normalized.extend([long_flag, arg.split("=", 1)[1]])
+        elif not arg.startswith("--") and len(arg) > 2 and arg[:2] in create_flags:
+            normalized.extend([arg[:2], arg[2:]])
+        else:
+            normalized.append(arg)
+    return normalized
+
+
 def check_checkout(args: list[str], create_flags: set[str]) -> str | None:
+    args = split_attached(args, create_flags)
     if not create_flags & set(args):
         return None
     # Drop the new branch name that follows the create flag; what remains is the start point.
@@ -275,10 +312,16 @@ def check_config(args: list[str]) -> str | None:
 def check_git(args: list[str], cwd: str | None) -> str | None:
     index = 0
     push_default = None
+    repo = ["-C", cwd] if cwd else []
     while index < len(args) and args[index].startswith("-"):
         option = args[index]
-        if option == "-C" and index + 1 < len(args):
-            cwd = os.path.join(cwd or os.getcwd(), args[index + 1])
+        name, attached, attached_value = option.partition("=")
+        if name in GIT_REPO_OPTIONS and attached:
+            repo += [name, attached_value]
+            index += 1
+            continue
+        if option in GIT_REPO_OPTIONS and index + 1 < len(args):
+            repo += [option, args[index + 1]]
         if option == "-c" and index + 1 < len(args):
             # Inline config (e.g. remote.origin.push=HEAD:main) can redirect a push.
             key, _, value = args[index + 1].partition("=")
@@ -292,7 +335,7 @@ def check_git(args: list[str], cwd: str | None) -> str | None:
         return None
     subcommand, rest = args[index], args[index + 1:]
     if subcommand == "push":
-        return check_push(rest, cwd, push_default)
+        return check_push(rest, repo, push_default)
     if subcommand == "branch":
         return check_branch(rest)
     if subcommand == "checkout":
