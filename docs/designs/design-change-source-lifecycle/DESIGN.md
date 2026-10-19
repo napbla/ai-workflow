@@ -208,7 +208,11 @@ Implement the provider contract defined by that accepted design revision.
 ...
 ```
 
-If an accepted Design is later revised, the architect must revalidate **every incomplete Change** mapped to that Design. A Change may continue only when its identity and implementation remain valid against the new accepted revision; otherwise close/restart it or revise it according to the normal identity rules. This prevents sibling Changes from silently implementing different Design revisions.
+If an accepted Design is later revised, the architect must revalidate **every incomplete Change** mapped to that Design. A Change may continue only when its identity and implementation remain valid against the new accepted revision; otherwise close/restart it or revise it according to the normal identity rules.
+
+Every continuing Change must durably rebind its `Design-Revision` to the newly accepted Design revision before implementation resumes. The revalidation is therefore visible to replacement implementers and reviewers and cannot exist only in PR discussion.
+
+This prevents sibling Changes from silently implementing different Design revisions.
 
 ## Change Identity
 
@@ -297,7 +301,17 @@ When all required Changes for a Design are complete:
 
 A realized Design is **not an archive**. It remains because it answers a current question: "what design does this code implement?" and gives agents an entry point into the relevant source instead of forcing repo-wide rediscovery.
 
-When a later Design supersedes only part of a realized Design, the old Design must be updated or split so that it describes only the scope it still realizes. Its Realization Map must drop superseded source areas, and the index must not leave overlapping entries that present obsolete behavior as current.
+When a later Design supersedes only part of a realized Design, the old Design continues to map the currently implemented source until replacement source is actually realized.
+
+The trim/split is atomic with realization of the replacement source:
+
+1. implement the replacement source;
+2. update the replacement Design Realization Map for the newly realized area;
+3. update or split the old Design so it describes only the scope still realized by old source;
+4. update `docs/designs/INDEX.md` so reverse lookup remains truthful and non-obsolete;
+5. include all of those mutations in the same final reviewed HEAD.
+
+An `Accepted` or `Implementing` replacement Design does not by itself supersede the current realized mapping.
 
 Remove a Design when it is fully superseded or no longer needed to understand the current system. Before removal, ensure its still-relevant knowledge has moved into the replacement Design/current architecture/spec/module docs. Git preserves the historical artifact.
 
