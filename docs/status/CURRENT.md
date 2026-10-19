@@ -8,7 +8,7 @@ Design and implement protocol v2 on `feature/generalize-agent-runtime-model`, in
 
 ## Active Changes
 
-- `docs/changes/generalize-agent-runtime-model/CHANGE.md` — Planned, owned by the `implementer` role.
+- `docs/changes/generalize-agent-runtime-model/CHANGE.md` — In Progress, owned by the `implementer` role.
 
 ## Human Attention
 
@@ -22,9 +22,9 @@ Design and implement protocol v2 on `feature/generalize-agent-runtime-model`, in
 
 ## Next
 
-- Implementer reads the active change and implements the smallest coherent protocol-v2 design.
-- Add modular Claude protected-branch enforcement and tests.
-- Open a PR from this feature branch to `develop`; do not target `main`.
+- Implementer executes the active change on this feature branch.
+- Run tests, commit, and push only this feature branch.
+- Create/update a PR targeting `develop`, consume review/CI feedback, and iterate until `ready-for-human-merge`.
 
 ## Current Truth References
 
