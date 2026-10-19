@@ -27,6 +27,7 @@ ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 # git global options that consume the following token.
 GIT_REPO_OPTIONS = {"-C", "--git-dir", "--work-tree"}
 GIT_GLOBAL_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix", "--config-env"}
+CONFIG_WITH_VALUE = {"-f", "--file", "--blob", "--type", "--default", "--comment", "--value", "--url"}
 PUSH_WITH_VALUE = {"--repo", "-o", "--push-option", "--receive-pack", "--exec"}
 # Long options the guard inspects; Git accepts any unique prefix of a long option.
 PUSH_LONG = ["--all", "--branches", "--mirror", "--repo", "--push-option", "--receive-pack", "--exec", "--set-upstream"]
@@ -252,9 +253,14 @@ def check_push(args: list[str], repo: list[str], push_default: str | None = None
     return None
 
 
+def upstream_is_protected(branch: str) -> bool:
+    # `<remote>/HEAD` is a symbolic ref to the remote's default branch, normally `main`.
+    return is_protected(branch) or branch == "HEAD"
+
+
 def check_upstream_value(value: str) -> str | None:
     branch = upstream_branch(value)
-    if is_protected(branch):
+    if upstream_is_protected(branch):
         return f"`{value}` would make protected branch `{branch}` an upstream"
     return None
 
@@ -283,7 +289,7 @@ def check_tracking_start_point(args: list[str], create_flags: set[str]) -> str |
     if start_point is None:
         return None
     remote_tracking = start_point.startswith(("refs/remotes/", "remotes/")) or ("/" in start_point and not start_point.startswith("refs/heads/"))
-    if (explicit_track or remote_tracking) and is_protected(upstream_branch(start_point)):
+    if (explicit_track or remote_tracking) and upstream_is_protected(upstream_branch(start_point)):
         return f"creating a branch from `{start_point}` would track protected branch `{upstream_branch(start_point)}`; add --no-track"
     return None
 
@@ -317,7 +323,15 @@ def check_checkout(args: list[str], create_flags: set[str]) -> str | None:
 
 
 def check_config(args: list[str]) -> str | None:
-    positionals = [arg for arg in args if not arg.startswith("-")]
+    positionals: list[str] = []
+    index = 0
+    while index < len(args):
+        if args[index] in CONFIG_WITH_VALUE:
+            index += 2
+            continue
+        if not args[index].startswith("-"):
+            positionals.append(args[index])
+        index += 1
     if positionals[:1] in (["set"], ["add"]):
         positionals = positionals[1:]
     if len(positionals) < 2:
@@ -383,7 +397,8 @@ def check_command(command: str, cwd: str | None = None) -> str | None:
         program = os.path.basename(tokens[0])
         flag = next((i for i, token in enumerate(tokens[1:-1], start=1) if SHELL_COMMAND_FLAG.match(token)), None)
         if program in SHELLS and flag is not None:
-            reason = check_command(tokens[flag + 1], cwd)
+            script = tokens[flag + 2] if tokens[flag + 1] == "--" and flag + 2 < len(tokens) else tokens[flag + 1]
+            reason = check_command(script, cwd)
         elif program == "git":
             reason = check_git(tokens[1:], cwd)
         else:

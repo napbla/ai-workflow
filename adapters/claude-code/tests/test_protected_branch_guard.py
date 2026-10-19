@@ -190,6 +190,22 @@ class DeniedCommandsTest(RepoTestCase):
         self.assertDenied("git push --repo other")
         self.assertAllowed("git push --repo=origin")
 
+    def test_config_value_options_are_skipped(self) -> None:
+        for command in [
+            "git config --file .git/config remote.origin.push HEAD:refs/heads/main",
+            "git config -f .git/config branch.feature/x.merge refs/heads/develop",
+            "git config --type bool remote.origin.mirror true",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git config --file .git/config user.name x")
+
+    def test_remote_head_upstream_is_denied(self) -> None:
+        self.assertDenied("git branch -u origin/HEAD")
+        self.assertDenied("git checkout -b feature/y origin/HEAD")
+
+    def test_shell_option_terminator_is_skipped(self) -> None:
+        self.assertDenied("bash -c -- 'git push origin main'")
+
     def test_attached_upstream_option_is_denied(self) -> None:
         self.assertDenied("git branch -uorigin/develop")
         self.assertAllowed("git branch -uorigin/feature/x")
