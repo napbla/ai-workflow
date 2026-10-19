@@ -1,6 +1,6 @@
 # ADR 0001: Protocol v2 — role identities, runtime assignment, and branch model
 
-Status: Accepted (protocol v2)
+Status: Accepted when merged into `develop`. Decisions 3 (fixed branch names) and 4 (the `adapters/` module) were proposed by the implementer under `architecture: propose` authority; the merge review confirms or rejects them.
 
 ## Context
 
