@@ -5,10 +5,21 @@ This workflow is designed for **one human operator working with multiple AI agen
 ## 1. One-time setup
 
 1. Create a Git repository and push it to your repository host.
-2. Run `python init/init.py --target <repo>` from the `ai-workflow` checkout.
-3. Commit `WORKFLOW.md`, `AGENTS.md`, `.agents/`, and `docs/`.
-4. Connect repository access to the AI surfaces you use when available.
-5. Treat the repository as canonical project state.
+2. Run `python init/init.py --target <repo>` from the `ai-workflow` checkout and choose the roles you need.
+3. Commit `.ai-workflow.yml`, `WORKFLOW.md`, `AGENTS.md`, `.agents/`, and `docs/` on `main`.
+4. Create `develop` from `main` and push it.
+5. Protect `main` and `develop` on the repository host (branch protection or rulesets): require a pull request, block force pushes and deletion. This is the authoritative enforcement of the protected branch policy.
+6. Optionally install a runtime adapter, such as the Claude Code hook in `adapters/claude-code/`, as an earlier guard.
+7. Connect repository access to the AI runtimes you use when available.
+8. Treat the repository as canonical project state.
+
+### Runtime credentials
+
+To let an implementer runtime push its feature branch and open PRs without you, give it a credential scoped to the one repository with only the permissions it needs (for GitHub, a fine-grained token with Contents and Pull requests read/write) and a short expiry. Keep it outside the repository, rely on step 5 to stop it from updating `main` or `develop`, and revoke it when no longer needed.
+
+### Invoking an agent
+
+Name the role, not the vendor, when you invoke an agent, for example: `You are the implementer. Sync the repository and work on feature/<change-id>.` Any runtime can fulfill any role; which one you pick is a per-session choice and is not recorded in the repository.
 
 ## 2. Use Chat for thinking
 
@@ -59,7 +70,8 @@ Chat exploration
       ↓
 Human decides to pursue it
       ↓
-docs/changes/<id>/CHANGE.md
+Architect creates feature/<id> from develop
+with docs/changes/<id>/CHANGE.md
       ↓
 Agent implementation
       ↓
@@ -71,7 +83,9 @@ Update current specs / architecture / ADR if needed
       ↓
 Delete active change artifact
       ↓
-Merge
+Human merges into develop
+      ↓
+Reviewed PR develop → main when releasing
 ```
 
 A small low-risk fix may go directly to code + regression test when no persistent coordination context is needed.
@@ -94,16 +108,22 @@ Do not add a human approval step merely because the workflow says so. Agent auth
 For implementation work:
 
 ```text
-Implementer opens/owns PR
+Implementer pushes feature branch, opens/owns PR targeting develop
         ↓
-Reviewer / Human leaves actionable feedback
+Reviewer / CI / Human leaves actionable feedback
         ↓
 Implementer fixes on same PR
         ↓
 CI + re-review
         ↓
-Merge
+ready-for-human-merge
+        ↓
+Human merges
 ```
+
+After you finalize a change's intent, this loop should run without you until the PR is `ready-for-human-merge`. You are pulled in only for ambiguity, consequential decisions, authority limits, or blocked credentials/infrastructure.
+
+Your PR comments re-enter the same loop when they refine the accepted change. If your feedback changes the intent, acceptance criteria, architecture, or scope, expect the agent to close the PR and start a new change instead of rewriting the old one.
 
 If an implementation agent can watch its own PR and react to reviews or CI, use that runtime feature. The shared workflow remains vendor-neutral.
 
@@ -164,7 +184,7 @@ and answer:
 
 If they need old chat logs to continue, repository state is incomplete.
 
-## 11. Cost-conscious ChatGPT flow
+## 11. Cost-conscious flow
 
 ```text
 Need to think/discuss?          → Chat

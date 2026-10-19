@@ -1,6 +1,6 @@
 # Generalize Agent Runtime Model and Branch Lifecycle
 
-Status: In Progress
+Status: Verifying
 Owner: implementer (runtime assigned at invocation)
 
 ## Goal
@@ -153,38 +153,45 @@ Automation expectations:
 
 ## Acceptance Criteria
 
-- [ ] Protocol documents the `main` / `develop` / feature branch model.
-- [ ] `main` is stable/releasable truth and `develop` is integration truth.
-- [ ] New feature work branches from `develop` and merges back through PR/review.
-- [ ] Implementers cannot directly push or set upstream/push targets to `main` or `develop`.
-- [ ] Generated defaults use runtime-neutral role identities instead of vendor-name identities.
-- [ ] Runtime assignment to roles is invocation/runtime state.
-- [ ] Role responsibility is separated from runtime capabilities/permissions.
-- [ ] PR ownership supports capability-aware handoff.
-- [ ] After human intent finalization, the normal workflow can run autonomously through implementation, tests, feature-branch push, PR creation/update, review-feedback iteration, and final verification until `ready-for-human-merge`.
-- [ ] Human interaction is not required during the autonomous loop unless risk, ambiguity, authority, credentials, or infrastructure require escalation.
-- [ ] Actionable human PR comments that preserve the accepted change intent re-open the implementation loop: sync feedback → implement → test → push → re-verify until the PR is ready for human merge again.
-- [ ] Human feedback that materially changes intent, acceptance criteria, architecture, or scope closes the current PR/change and starts a new feature branch/PR rather than mutating the old one.
-- [ ] A replacement change may reuse still-valid evidence such as end-to-end/regression tests and implementation fragments, but its new intent and acceptance criteria are materialized explicitly in repository state.
-- [ ] Runtime credentials are never stored in repository state and cannot directly update protected integration branches.
-- [ ] Reviewer workflow has a fallback when PR publishing is unavailable.
-- [ ] Completion rules require appropriate current truth instead of mandatory `docs/specs/` duplication.
-- [ ] Status semantics prevent pre-merge state becoming stale on the target branch.
-- [ ] Claude protected-branch enforcement is implemented as a runtime adapter/hook without making the core protocol Claude-specific.
-- [ ] Guard tests cover allowed feature-branch pushes and denied protected-branch/upstream cases.
-- [ ] Initializer/self-bootstrap output conforms to protocol v2.
-- [ ] Protocol version is incremented under compatibility rules.
-- [ ] Current repository branching state is internally consistent.
+- [x] Protocol documents the `main` / `develop` / feature branch model.
+- [x] `main` is stable/releasable truth and `develop` is integration truth.
+- [x] New feature work branches from `develop` and merges back through PR/review.
+- [x] Implementers cannot directly push or set upstream/push targets to `main` or `develop`.
+- [x] Generated defaults use runtime-neutral role identities instead of vendor-name identities.
+- [x] Runtime assignment to roles is invocation/runtime state.
+- [x] Role responsibility is separated from runtime capabilities/permissions.
+- [x] PR ownership supports capability-aware handoff.
+- [x] After human intent finalization, the normal workflow can run autonomously through implementation, tests, feature-branch push, PR creation/update, review-feedback iteration, and final verification until `ready-for-human-merge`.
+- [x] Human interaction is not required during the autonomous loop unless risk, ambiguity, authority, credentials, or infrastructure require escalation.
+- [x] Actionable human PR comments that preserve the accepted change intent re-open the implementation loop: sync feedback → implement → test → push → re-verify until the PR is ready for human merge again.
+- [x] Human feedback that materially changes intent, acceptance criteria, architecture, or scope closes the current PR/change and starts a new feature branch/PR rather than mutating the old one.
+- [x] A replacement change may reuse still-valid evidence such as end-to-end/regression tests and implementation fragments, but its new intent and acceptance criteria are materialized explicitly in repository state.
+- [x] Runtime credentials are never stored in repository state and cannot directly update protected integration branches.
+- [x] Reviewer workflow has a fallback when PR publishing is unavailable.
+- [x] Completion rules require appropriate current truth instead of mandatory `docs/specs/` duplication.
+- [x] Status semantics prevent pre-merge state becoming stale on the target branch.
+- [x] Claude protected-branch enforcement is implemented as a runtime adapter/hook without making the core protocol Claude-specific.
+- [x] Guard tests cover allowed feature-branch pushes and denied protected-branch/upstream cases.
+- [x] Initializer/self-bootstrap output conforms to protocol v2.
+- [x] Protocol version is incremented under compatibility rules.
+- [x] Current repository branching state is internally consistent.
 
 ## Evidence From v1 End-to-End Test
 
 The first workflow test showed that repo-based handoff works, but also revealed runtime permission differences, review-publishing failure as a transport concern, unnecessary spec duplication for small local behavior, post-merge status staleness, and the mistake of placing transient active-change state directly on `main`.
 
-## Open Design Questions
+## Implementation Notes
 
-Resolve only when implementation requires it:
+Open design questions were resolved during implementation and recorded in `docs/adr/0001-protocol-v2-roles-and-branch-model.md`:
 
-- whether simultaneous role instances need distinct IDs;
-- whether protected branches are declared in project config, defaulted by adapters, or both;
-- whether `develop` → `main` needs an explicit release artifact or a normal reviewed PR;
-- whether a Git `pre-push` helper is generated or optional/documented.
+- Simultaneous role instances share the role ID; distinct instance IDs are deferred.
+- Protected branches (`main`, `develop`) are fixed by the protocol, not configurable; adapters hard-code them.
+- `develop` → `main` is a normal reviewed PR; no release artifact.
+- A Git `pre-push` helper is optional/documented, not generated.
+
+Decisions taken under implementer `architecture: propose` authority, flagged for architect/human confirmation at merge review:
+
+- New top-level `adapters/` module (`adapters/claude-code/`) holds runtime enforcement; `.claude/settings.json` registers the hook in place.
+- Fixed (non-configurable) protected branch names.
+
+Verification: `python -m unittest discover -s init/tests` and `python -m unittest discover -s adapters/claude-code/tests`. `init/tests` also asserts this repository's generated files match init output.

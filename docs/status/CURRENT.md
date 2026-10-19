@@ -8,7 +8,7 @@ Design and implement protocol v2 on `feature/generalize-agent-runtime-model`, in
 
 ## Active Changes
 
-- `docs/changes/generalize-agent-runtime-model/CHANGE.md` — In Progress, owned by the `implementer` role.
+- `docs/changes/generalize-agent-runtime-model/CHANGE.md` — Verifying, owned by the `implementer` role; PR to `develop` under review.
 
 ## Human Attention
 
