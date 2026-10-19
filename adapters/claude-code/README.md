@@ -4,18 +4,24 @@
 
 It blocks (exit code 2, reason returned to Claude):
 
-- pushes whose destination is `main` or `develop`, including `HEAD:main`, `+develop`, `:develop` (delete), and wildcard refspecs;
-- `git push --all`, `--branches`, `--mirror`, matching pushes (`git push origin :`), and `push.default=matching` (via `-c` or `git config`, or already configured for a refspec-less push);
-- refspec-less `git push` from `main`/`develop`, from a branch whose upstream is `main`/`develop`, or to a remote whose configured `remote.<name>.push` targets them or that is configured to mirror;
-- setting `main`/`develop` as upstream: `git branch -u/--set-upstream-to`, `git config branch.<b>.merge`, `git config remote.<r>.push`, and creating a branch from `origin/main`/`origin/develop` without `--no-track` (including attached forms such as `-bname` and `--create=name`).
+- pushes whose destination is `main` or `develop`, including `HEAD:main`, `+develop`, `:develop` (delete), matching (`:`), and wildcard refspecs;
+- `git push --all`, `--branches`, `--mirror`;
+- pushes redirected to `main`/`develop` by configuration: `push.default=matching`, `push.default=upstream` with a protected upstream, a remote's `remote.<name>.push` mapping or mirror setting, and refspec-less pushes from `main`/`develop`;
+- making `main`/`develop` an upstream or push target: `git branch -u/--set-upstream-to`, writes to `branch.<b>.merge`, `remote.<r>.push`, `remote.<r>.mirror`, or `push.default=matching`, `git remote add --mirror[=push]`, and creating a branch (`checkout -b`, `switch -c`, `branch`, `worktree add -b`) from a protected remote-tracking start point without `--no-track`.
 
-The repository checked is the one Git would use, including `-C`, `--git-dir`, and `--work-tree`.
+Normal feature-branch work is allowed, including `git push -u origin feature/<change-id>` and commit messages or PR bodies that mention `main` or `develop`.
 
-Normal feature-branch pushes such as `git push -u origin feature/<change-id>` are allowed. Commands are checked through `&&`, `;`, pipes, newlines, and `sh/bash/zsh -c`. Quoted strings and heredoc bodies are treated as data, so commit messages and PR bodies that mention `main` or `develop` are not blocked.
+## How it checks
 
-`git config` writes to `remote.*.push`, `remote.*.mirror`, `branch.*.merge`, or `push.default` are checked wherever the key appears among the arguments, and `git remote add --mirror[=push]` is denied. Inline `git -c`/`--config-env` settings are checked the same way and are also applied when the guard resolves the push remote and its configuration. Wrapper commands such as `env`, `sudo`, `timeout`, `nice`, and `xargs` are unwrapped. Heredocs fed to a shell (`bash <<EOF`) are checked as commands.
+- Every `git` word in the command is analyzed wherever it appears, including after shell keywords (`if`, `!`, `{`, `do`), wrappers (`env`, `sudo`, `timeout`, `nice`), and pipes. An unquoted phrase such as `echo git push origin main` is therefore treated as a git command; quote it.
+- Nested command strings are checked recursively: `sh/bash/zsh -c`, heredocs and here-strings fed to a shell, `eval`, and `env -S`.
+- Quoted strings and heredoc bodies that are not fed to a shell are treated as data. Redirections (`>/dev/null`, `2>&1`) are ignored.
+- Options are normalized the way Git parses them: unique long-option prefixes, short-option clusters, attached values, and last-wins `--track`/`--no-track`.
+- Ref expressions (`@{u}`, `main@{upstream}`, `-`, abbreviations) are resolved with `git rev-parse` in the same repository and with the same `-C`, `--git-dir`, `--work-tree`, `-c`, and `--config-env` options as the command.
+- It fails closed on unrecognized git global options and on `xargs`-supplied arguments to inspected git subcommands.
+- Config reads and removals (`--get`, `--unset`, `git config get`, ...) are allowed; only writes are checked.
 
-This is best-effort parsing of shell text, not a security boundary: variables (including `GIT_DIR=...` prefixes), aliases, scripts, and backtick substitutions can evade it. Repository-host branch protection is the authoritative layer.
+This is best-effort parsing of shell text, not a security boundary. Shell variables and expansions, aliases, scripts, backtick substitutions, and `GIT_*` environment variables can evade it. Repository-host branch protection is the authoritative layer.
 
 ## Install
 

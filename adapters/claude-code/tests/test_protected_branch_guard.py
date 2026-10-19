@@ -66,7 +66,7 @@ class AllowedCommandsTest(RepoTestCase):
             "git branch feature/y develop",
             "git branch --set-upstream-to=origin/feature/x",
             'git commit -m "docs: mention main and develop"',
-            "echo git push origin main",
+            'echo "git push origin main"',
             "python3 -m unittest discover -s init/tests",
         ]:
             self.assertAllowed(command)
@@ -262,6 +262,101 @@ class DeniedCommandsTest(RepoTestCase):
             self.assertDenied(command)
         self.assertAllowed("timeout 30 git push origin feature/x")
         self.assertAllowed("env FOO=1 python3 script.py main")
+
+    def test_git_is_found_after_shell_keywords_and_wrappers(self) -> None:
+        for command in [
+            "if git push origin feature/x:main; then :; fi",
+            "! git push origin feature/x:main",
+            "{ git push origin feature/x:main; }",
+            "for x in 1; do git push origin feature/x:main; done",
+            "env -u git git push origin main",
+            "command -p git push origin develop",
+        ]:
+            self.assertDenied(command)
+
+    def test_nested_command_strings_are_checked(self) -> None:
+        for command in [
+            "eval git push origin feature/x:main",
+            "eval 'git push origin feature/x:main'",
+            "bash <<< 'git push origin feature/x:main'",
+            "env -S 'git push origin feature/x:main'",
+            "env --split-string='git push origin develop'",
+        ]:
+            self.assertDenied(command)
+
+    def test_attached_redirections_are_stripped(self) -> None:
+        self.assertDenied("git push origin feature/x:main>/dev/null")
+        self.assertDenied("git push origin main 2>&1")
+        self.assertAllowed("git push origin feature/x >/dev/null 2>&1")
+
+    def test_combined_short_options_are_expanded(self) -> None:
+        for command in [
+            "git checkout -qb feat2 origin/main",
+            "git checkout -fb feat2 origin/main",
+            "git switch -qc feat2 origin/main",
+            "git branch -qu origin/main",
+            "git branch -vuorigin/develop",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git checkout -qb feat2 --no-track origin/main")
+
+    def test_last_track_option_wins(self) -> None:
+        self.assertDenied("git checkout -b feat2 --no-track --track origin/main")
+        self.assertDenied("git branch --no-track --track feat2 origin/main")
+        self.assertAllowed("git checkout -b feat2 --track --no-track origin/main")
+
+    def test_revision_expressions_are_resolved(self) -> None:
+        with tempfile.TemporaryDirectory() as bare_tmp:
+            git(self.repo, "init", "-q", "--bare", bare_tmp)
+            git(self.repo, "remote", "add", "origin", bare_tmp)
+            git(self.repo, "push", "-q", "origin", "develop")
+            git(self.repo, "fetch", "-q", "origin")
+            git(self.repo, "branch", "--set-upstream-to=origin/develop", "develop")
+            for command in [
+                "git branch -u develop@{u}",
+                "git checkout -b feat2 develop@{upstream}",
+            ]:
+                self.assertDenied(command)
+            git(self.repo, "checkout", "-q", "develop")
+            self.assertDenied("git branch feat2 @{u}")
+
+    def test_worktree_add_branch_creation_is_checked(self) -> None:
+        self.assertDenied("git worktree add -b feat2 ../wt origin/main")
+        self.assertAllowed("git worktree add -b feat2 --no-track ../wt origin/main")
+        self.assertAllowed("git worktree add ../main feature/x")
+
+    def test_unknown_global_option_fails_closed(self) -> None:
+        self.assertDenied("git --attr-source HEAD push origin feature/x:main")
+        self.assertDenied("git --made-up-option push origin feature/x")
+        self.assertAllowed("git --no-pager log --oneline main..develop")
+        self.assertAllowed("git --attr-source=HEAD push origin feature/x")
+
+    def test_matching_refspec_in_config_is_denied(self) -> None:
+        self.assertDenied("git config remote.origin.push :")
+        self.assertDenied("git config remote.origin.push +:")
+        git(self.repo, "config", "remote.origin.push", ":")
+        self.assertDenied("git push")
+
+    def test_source_only_refspec_follows_config_mapping(self) -> None:
+        git(self.repo, "config", "branch.feature/x.merge", "refs/heads/main")
+        self.assertDenied("git -c push.default=upstream push origin feature/x")
+        git(self.repo, "config", "--unset", "branch.feature/x.merge")
+        git(self.repo, "config", "remote.origin.push", "refs/heads/feature/x:refs/heads/main")
+        self.assertDenied("git push origin feature/x")
+
+    def test_xargs_arguments_fail_closed(self) -> None:
+        self.assertDenied("printf 'main\\n' | xargs git push origin")
+        self.assertAllowed("git ls-files | xargs git log -1 --")
+
+    def test_config_reads_and_removals_are_allowed(self) -> None:
+        for command in [
+            "git config --get push.default matching",
+            "git config --unset remote.origin.push HEAD:refs/heads/main",
+            "git config --get-all branch.feature/x.merge refs/heads/main",
+            "git config unset branch.feature/x.merge",
+            "git config get remote.origin.mirror",
+        ]:
+            self.assertAllowed(command)
 
     def test_attached_upstream_option_is_denied(self) -> None:
         self.assertDenied("git branch -uorigin/develop")
