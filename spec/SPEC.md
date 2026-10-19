@@ -62,7 +62,7 @@ Completed change artifacts are removed after durable knowledge is folded into th
 - `develop` — reviewed integration truth; feature branches start from and merge back into it through PR review.
 - `feature/<change-id>` — one active change, including its `CHANGE.md` and branch-local status.
 
-`main` and `develop` are protected: implementers never push to them or set them as upstream/push targets. `docs/status/CURRENT.md` is branch-sensitive and must be correct for the target branch when a branch is merged. `WORKFLOW.md` holds the full lifecycle, including autonomous change execution up to `ready-for-human-merge`.
+`main` and `develop` are protected: implementers never push to them or set them as upstream/push targets. `docs/status/CURRENT.md` is merge-safe current truth: content merged into a protected branch must already be true there after the merge, and transient PR, review, or release state belongs in the PR or active change. `WORKFLOW.md` holds the full lifecycle, including autonomous change execution up to `ready-for-human-merge`.
 
 Repository-host branch protection or rulesets are the authoritative enforcement: both branches require a pull request and block force pushes and deletion for agent credentials. Agents verify protection (for GitHub, `../check/branch_protection.py`) rather than parse local commands; missing or unverifiable protection is a human setup blocker.
 

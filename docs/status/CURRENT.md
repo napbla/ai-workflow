@@ -4,11 +4,11 @@ Updated: 2026-10-19
 
 ## Current Objective
 
-Fix protocol-v2 status semantics so `docs/status/CURRENT.md` contains merge-safe current truth and does not become stale merely because a PR is merged.
+No objective is in progress. The project uses protocol v2: role-based agent identities with runtimes assigned at invocation, `main` as the stable branch and `develop` as the integration branch with work on `feature/<change-id>` branches, autonomous change execution up to `ready-for-human-merge`, merge-safe current status, and GitHub branch protection of `main` and `develop` as the enforcement boundary, verified by `check/branch_protection.py`.
 
 ## Active Changes
 
-- `docs/changes/fix-current-status-semantics/CHANGE.md` — Planned, owned by the `implementer` role.
+- None.
 
 ## Human Attention
 
@@ -16,14 +16,11 @@ Fix protocol-v2 status semantics so `docs/status/CURRENT.md` contains merge-safe
 
 ## Blockers / Risks
 
-- Keep this change narrowly scoped to status semantics.
-- Do not mix in CI, migration tooling, or unrelated protocol changes.
+- None. `check/branch_protection.py`, run with the implementer's credential on 2026-10-19, exited 0: an active ruleset with no bypass actors requires a PR and blocks force pushes and deletion on both `main` and `develop`. Re-run it whenever agent credentials or rulesets change.
 
 ## Next
 
-- Update workflow and generated templates with merge-safe `CURRENT.md` rules.
-- Replace stale release-relative status with durable protocol-v2 current truth.
-- Open a PR from this feature branch to `develop`, then run independent review until the latest head is ready for human merge.
+- Define the next objective as an active change on a feature branch from `develop`.
 
 ## Current Truth References
 

@@ -63,6 +63,7 @@ class GeneratedProjectTest(unittest.TestCase):
             workflow = (target / "WORKFLOW.md").read_text(encoding="utf-8")
             self.assertIn(f"Protocol: `ai-workflow v{version}`", workflow)
             self.assertIn("## Branch Model", workflow)
+            self.assertIn("### Merge-safe status", workflow)
             for path in target.rglob("*.md"):
                 text = path.read_text(encoding="utf-8")
                 for vendor in ("ChatGPT", "Claude", "Codex"):
