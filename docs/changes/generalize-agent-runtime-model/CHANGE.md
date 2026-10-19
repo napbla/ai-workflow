@@ -1,0 +1,140 @@
+# Generalize Agent Runtime Model and Branch Lifecycle
+
+Status: Planned
+Owner: implementer (runtime assigned at invocation)
+
+## Goal
+
+Evolve the workflow to protocol v2 by separating role identity from AI runtime/vendor and by formalizing a stable/integration/feature branching model.
+
+The repository remains the canonical transferable project state, but canonical state is branch-sensitive:
+
+- `main` represents stable integrated truth.
+- `develop` represents reviewed integration truth.
+- active work lives on feature branches derived from `develop`.
+
+## Branch Model
+
+### `main` — stable
+
+- Stable/releasable current truth.
+- No active-change coordination artifacts are introduced directly on `main`.
+- Implementers must not push directly to `main`.
+- Implementers must not configure `main` as a push/upstream target.
+- Changes reach `main` through reviewed integration from `develop`.
+- Direct updates are reserved for explicit repository administration/bootstrap or emergency repair.
+
+### `develop` — integration
+
+- Integration branch for accepted feature work.
+- New feature branches start from latest `develop`.
+- Feature branches merge back into `develop` through PR/review.
+- Implementers must not push directly to `develop`.
+- Implementers must not configure `develop` as a push/upstream target.
+- `develop` may be ahead of `main`.
+
+### Feature branches
+
+Default naming:
+
+`feature/<change-id>`
+
+Current branch:
+
+`feature/generalize-agent-runtime-model`
+
+A feature branch may contain the active `CHANGE.md`, branch-local status, implementation, tests, and current-truth updates.
+
+Before merging a completed feature into `develop`:
+
+1. verify acceptance criteria;
+2. fold durable knowledge into the appropriate current-truth surfaces;
+3. remove the active change artifact;
+4. make branch-local status appropriate for the expected post-merge integration state;
+5. merge through PR/review.
+
+Release/integration from `develop` to `main` must leave `main` with stable, non-transient current state.
+
+## Role Identity and Runtime Assignment
+
+- Core agent identities are role-oriented, e.g. `architect`, `implementer`, `reviewer`.
+- Runtime/model/vendor is assigned at invocation time and may change without changing the workflow contract.
+- The protocol does not permanently bind ChatGPT, Claude Code, Codex, or future runtimes to roles.
+- A role may be fulfilled by different runtimes in different sessions.
+
+## Runtime Capability Boundaries
+
+- Role responsibility and runtime capability are separate.
+- Agents act only within capabilities actually available in their runtime.
+- PR ownership means lifecycle responsibility, not guaranteed GitHub permissions.
+- If push, PR creation, review publishing, or merge is unavailable, hand that action to the human or another capable agent without losing lifecycle ownership.
+
+## Protected Branch Policy
+
+Implementers may, when supported: edit, test, commit, push their working branch, and update its PR.
+
+Implementers must not:
+
+- push directly to `main` or `develop`;
+- push any refspec whose destination is `main` or `develop`;
+- set `main` or `develop` as upstream/push targets;
+- bypass policy with force/mirror/all-style pushes to protected integration branches.
+
+Core protocol defines this policy. Runtime-specific enforcement belongs in adapters.
+
+For Claude Code, add a project-level `PreToolUse` Bash hook that blocks protected-branch operations while allowing normal feature-branch pushes. Local Git safeguards and GitHub branch protection/rulesets are stronger complementary layers.
+
+## Review Delivery
+
+- Reviewers must produce actionable review findings.
+- Publishing as a PR review/comment is preferred.
+- If PR write access is unavailable, returning findings to the invoking human/agent is a valid fallback.
+- GitHub transport failure alone does not invalidate a completed review.
+
+## Durable Current Truth
+
+Completion must place durable knowledge in the most appropriate surface: code, tests, module docs, specs, architecture docs, or ADRs as appropriate.
+
+Do not require every completed behavior change to duplicate itself in `docs/specs/`.
+
+## Status Semantics
+
+`docs/status/CURRENT.md` is branch-sensitive:
+
+- `main`: stable integrated state;
+- `develop`: integration state;
+- feature branch: active change/review state for that branch.
+
+A branch being merged must carry status suitable for the target's expected post-merge state so merge does not immediately make status stale.
+
+## Acceptance Criteria
+
+- [ ] Protocol documents the `main` / `develop` / feature branch model.
+- [ ] `main` is stable/releasable truth and `develop` is integration truth.
+- [ ] New feature work branches from `develop` and merges back through PR/review.
+- [ ] Implementers cannot directly push or set upstream/push targets to `main` or `develop`.
+- [ ] Generated defaults use runtime-neutral role identities instead of vendor-name identities.
+- [ ] Runtime assignment to roles is invocation/runtime state.
+- [ ] Role responsibility is separated from runtime capabilities/permissions.
+- [ ] PR ownership supports capability-aware handoff.
+- [ ] Reviewer workflow has a fallback when PR publishing is unavailable.
+- [ ] Completion rules require appropriate current truth instead of mandatory `docs/specs/` duplication.
+- [ ] Status semantics prevent pre-merge state becoming stale on the target branch.
+- [ ] Claude protected-branch enforcement is implemented as a runtime adapter/hook without making the core protocol Claude-specific.
+- [ ] Guard tests cover allowed feature-branch pushes and denied protected-branch/upstream cases.
+- [ ] Initializer/self-bootstrap output conforms to protocol v2.
+- [ ] Protocol version is incremented under compatibility rules.
+- [ ] Current repository branching state is internally consistent.
+
+## Evidence From v1 End-to-End Test
+
+The first workflow test showed that repo-based handoff works, but also revealed runtime permission differences, review-publishing failure as a transport concern, unnecessary spec duplication for small local behavior, post-merge status staleness, and the mistake of placing transient active-change state directly on `main`.
+
+## Open Design Questions
+
+Resolve only when implementation requires it:
+
+- whether simultaneous role instances need distinct IDs;
+- whether protected branches are declared in project config, defaulted by adapters, or both;
+- whether `develop` → `main` needs an explicit release artifact or a normal reviewed PR;
+- whether a Git `pre-push` helper is generated or optional/documented.
