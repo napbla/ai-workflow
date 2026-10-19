@@ -425,6 +425,40 @@ class DeniedCommandsTest(RepoTestCase):
         ]:
             self.assertDenied(command)
 
+    def test_value_options_from_git_help_are_consumed(self) -> None:
+        for command in [
+            "git checkout -b feat --conflict merge origin/main",
+            "git switch -c feat --conflict=diff3 origin/main",
+            "git checkout -b feat --inter-hunk-context 3 origin/develop",
+            "git branch --sort refname feat origin/main",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git branch --contains origin/main")
+        self.assertAllowed("git branch --merged develop")
+
+    def test_branch_listing_with_option_values_is_allowed(self) -> None:
+        git(self.repo, "checkout", "-q", "develop")
+        git(self.repo, "config", "branch.develop.merge", "refs/heads/develop")
+        for command in [
+            "git branch --sort -committerdate",
+            "git branch --sort=-committerdate -v",
+            "git branch -a -vv",
+            "git branch --points-at HEAD",
+        ]:
+            self.assertAllowed(command)
+        git(self.repo, "config", "branch.autoSetupMerge", "always")
+        self.assertAllowed("git branch --format '%(refname)' --list")
+        self.assertAllowed("git branch --contains HEAD --format '%(refname)'")
+
+    def test_rename_into_remote_or_branch_section_is_denied(self) -> None:
+        self.assertDenied("git config safe.origin.push refs/heads/feature/x:refs/heads/main && git config --rename-section safe.origin remote.origin")
+        self.assertDenied("git config rename-section tmp.x branch.feature/x")
+        self.assertAllowed("git config --rename-section alias.old alias.new")
+
+    def test_quoted_shell_owning_heredoc_is_checked(self) -> None:
+        self.assertDenied("'bash' <<'EOF'\ngit push origin main\nEOF")
+        self.assertDenied("\"/bin/sh\" <<EOF\ngit push origin develop\nEOF")
+
     def test_heredoc_owned_by_non_shell_command_is_data(self) -> None:
         self.assertAllowed("bash build.sh && cat > notes.txt <<EOF\ngit push origin main\nEOF")
         self.assertDenied("cat notes.txt && bash <<EOF\ngit push origin main\nEOF")

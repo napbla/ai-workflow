@@ -82,16 +82,31 @@ SENSITIVE_CONFIG_KEY = re.compile(r"^(remote\..+\.(push|mirror)|branch\..+\.merg
 # and short options that take a value (a short-option cluster stops at the first of these).
 PUSH_LONG = ["--all", "--branches", "--mirror", "--repo", "--push-option", "--receive-pack", "--exec", "--recurse-submodules", "--set-upstream"]
 PUSH_WITH_VALUE = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--recurse-submodules"}
-BRANCH_LONG = ["--set-upstream-to", "--track", "--no-track", "--copy", "--move"]
-BRANCH_WITH_VALUE = {"-u", "--set-upstream-to"}
-# `git branch` modes that list, delete, or edit instead of creating a branch.
+# Tables follow `git <subcommand> -h` (Git 2.54); full long-option lists keep prefix expansion unambiguous.
+BRANCH_LONG = [
+    "--set-upstream-to", "--track", "--no-track", "--copy", "--move", "--delete", "--list", "--all", "--remotes",
+    "--show-current", "--edit-description", "--unset-upstream", "--verbose", "--quiet", "--force", "--create-reflog",
+    "--contains", "--no-contains", "--merged", "--no-merged", "--sort", "--points-at", "--format", "--column",
+    "--abbrev", "--color", "--ignore-case", "--omit-empty", "--recurse-submodules",
+]
+BRANCH_WITH_VALUE = {"-u", "--set-upstream-to", "--contains", "--no-contains", "--merged", "--no-merged", "--sort", "--points-at", "--format"}
+# `git branch` modes that list, delete, or edit instead of creating a branch (verified against Git:
+# `--sort`, `--format`, `-v`, and `--column` still create a branch when names are given).
 BRANCH_NON_CREATE = {
     "-d", "-D", "--delete", "-l", "--list", "-a", "--all", "-r", "--remotes", "--show-current",
     "--edit-description", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at",
-    "--unset-upstream", "-v", "-vv", "--verbose",
+    "--unset-upstream",
 }
-CHECKOUT_LONG = ["--create", "--force-create", "--track", "--no-track", "--orphan", "--unified", "--conflict"]
-CHECKOUT_WITH_VALUE = {"-b", "-B", "-c", "-C", "-U", "--create", "--force-create", "--orphan", "--unified"}
+CHECKOUT_LONG = [
+    "--create", "--force-create", "--track", "--no-track", "--orphan", "--unified", "--conflict", "--inter-hunk-context",
+    "--pathspec-from-file", "--pathspec-file-nul", "--guess", "--no-guess", "--overlay", "--recurse-submodules", "--force",
+    "--merge", "--detach", "--quiet", "--progress", "--ignore-other-worktrees", "--ignore-skip-worktree-bits",
+    "--discard-changes", "--patch", "--ours", "--theirs",
+]
+CHECKOUT_WITH_VALUE = {
+    "-b", "-B", "-c", "-C", "-U", "--create", "--force-create", "--orphan", "--unified", "--conflict",
+    "--inter-hunk-context", "--pathspec-from-file",
+}
 WORKTREE_ADD_LONG = ["--track", "--no-track", "--reason"]
 WORKTREE_ADD_WITH_VALUE = {"-b", "-B", "--reason"}
 REMOTE_ADD_LONG = ["--mirror", "--master"]
@@ -105,7 +120,12 @@ def expand_options(args: list[str], known_long: list[str], with_value: set[str])
     for value-taking options. Everything after `--` is left untouched.
     """
     expanded: list[str] = []
+    take_value = False
     for index, arg in enumerate(args):
+        if take_value:
+            expanded.append(arg)  # the value of the previous option, even if it starts with `-`
+            take_value = False
+            continue
         if arg == "--":
             expanded.extend(args[index:])
             break
@@ -119,15 +139,19 @@ def expand_options(args: list[str], known_long: list[str], with_value: set[str])
                 expanded.extend([name, value])
             else:
                 expanded.append(name + equals + value)
+                take_value = not equals and name in with_value
         elif arg.startswith("-") and len(arg) > 2 and arg[1].isalpha():
             for position, char in enumerate(arg[1:], start=1):
                 expanded.append(f"-{char}")
                 if f"-{char}" in with_value:
                     if position + 1 < len(arg):
                         expanded.append(arg[position + 1:])
+                    else:
+                        take_value = True
                     break
         else:
             expanded.append(arg)
+            take_value = arg in with_value
     return expanded
 
 
@@ -260,7 +284,11 @@ def strip_heredoc_bodies(command: str) -> tuple[str, list[str]]:
 def heredoc_feeds_shell(before: str) -> bool:
     """Whether the simple command that owns a heredoc (text before `<<` on its line) is a shell."""
     owner = re.split(r"[;&|()]", before)[-1]
-    return any(os.path.basename(word) in SHELLS for word in owner.split())
+    try:
+        words = shlex.split(owner)
+    except ValueError:
+        words = [word.strip("'\"") for word in owner.split()]
+    return any(os.path.basename(word) in SHELLS for word in words)
 
 
 def tokenize(text: str) -> list[str]:
@@ -624,6 +652,10 @@ def check_rename_section(args: list[str], repo: list[str]) -> str | None:
         return None
     section = operands[0]
     kind, _, name = section.partition(".")
+    destination_kind = operands[1].partition(".")[0].lower() if len(operands) > 1 else ""
+    if destination_kind in {"branch", "remote"} and kind.lower() not in {"branch", "remote"}:
+        # Its contents may have been written earlier in this same command, so they cannot be checked here.
+        return f"renaming config section `{section}` into a `{destination_kind}.*` section cannot be checked"
     if kind.lower() == "branch" and name and (name in PROTECTED or protected_upstream(name, repo)):
         return f"renaming config section `{section}` would move a protected branch's tracking settings"
     if kind.lower() == "remote" and name and configured_push_problem(name, repo):
