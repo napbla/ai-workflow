@@ -5,31 +5,36 @@ Owner: architect
 
 ## Goal
 
-Formalize the lessons learned from the protocol-v2 rollout about how design work, implementation work, review, and implementation pivots should be represented.
+Formalize the lessons learned from the protocol-v2 rollout about design review, implementation identity, reviewer ownership, and implementation pivots.
 
-This change is currently in the **design phase only**. No protocol implementation should be changed until this design is accepted.
+This change is currently in the **design phase only**. No protocol implementation should begin until the human accepts the design.
 
-## Design Questions
+## Design Decisions Under Review
 
-1. When should a project or consequential change get a Design PR before implementation?
-2. What is allowed to change inside a Design PR?
-3. What defines the identity of an implementation change/PR?
-4. When does implementation feedback stay in the same PR versus require a new change?
-5. How should implementation constraints that force a different strategy be handled?
-6. Who owns the final review verdict on the latest implementation head?
-7. How should vendor-specific automation such as Claude PR watchers/autofix loops fit without entering core protocol semantics?
+1. Every brand-new project must have human-reviewable design before implementation.
+2. Design is a phase of the normal `feature/<change-id>` PR, not a separate branch namespace.
+3. Human acceptance transitions the same PR from design to implementation; design is not merged separately.
+4. Accepted future-state design remains active-change state until its implementation is ready to merge.
+5. Implementation identity is accepted intent + acceptance criteria + explicit non-negotiable constraints.
+6. Strategy/architecture/scope pivots stay in the same PR when that identity remains unchanged.
+7. Identity-changing feedback after acceptance starts a new change/PR.
+8. Reviewer, not implementer, owns the clean verdict on the latest head.
+9. Runtime-specific PR monitoring/autofix remains optional acceleration, not core protocol semantics.
 
 ## Acceptance Criteria for the Design Phase
 
-- [ ] The Design PR lifecycle is clear enough to apply to a brand-new project.
-- [ ] Design PRs explicitly allow the proposed intent, architecture, scope, and acceptance criteria to evolve during review.
-- [ ] Accepted design is separated from implementation work.
-- [ ] Implementation change identity is defined by accepted intent + acceptance criteria, not by the original implementation plan.
-- [ ] Implementation pivots caused by discovered constraints stay in the same implementation PR when intent and acceptance criteria are unchanged.
-- [ ] Material changes to accepted intent/acceptance criteria after implementation starts require a new change/PR.
-- [ ] The reviewer, not the implementer, owns the clean-review verdict on the latest head.
-- [ ] Runtime-specific PR monitoring/autofix features remain optional adapters, not core protocol requirements.
-- [ ] The design identifies what should be implemented in WORKFLOW/HUMAN_SETUP/templates if accepted.
+- [x] The lifecycle is clear enough to apply to a brand-new project.
+- [x] Brand-new projects require design before implementation.
+- [x] Design review can evolve intent, architecture, scope, constraints, and acceptance criteria before human acceptance.
+- [x] Accepted design is preserved canonically on the active feature branch until implementation completes.
+- [x] No separate `design/<id>` namespace is required without a distinct operational boundary.
+- [x] Future-state design does not merge into integration/stable truth ahead of the code that realizes it.
+- [x] Implementation identity is explicit and distinct from implementation plan.
+- [x] Constraint-driven implementation pivots stay in the same PR when identity is unchanged.
+- [x] Identity-changing feedback after implementation starts requires a new change/PR.
+- [x] Reviewer owns the clean-review verdict on the latest head.
+- [x] Runtime-specific PR monitoring/autofix remains outside core semantics.
+- [x] The proposal identifies the protocol/operator files to update after acceptance.
 
 ## Non-Goals
 
