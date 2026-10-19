@@ -19,6 +19,8 @@ Human involvement is required by **risk, uncertainty, and authority**, not by ce
 
 The Git repository is the source of truth.
 
+Canonical state is branch-sensitive (see Branch Model): `main` holds stable truth, `develop` holds reviewed integration truth, and a feature branch holds the state of its active change.
+
 Conversation history, PR comments, CI messages, and external tools are coordination surfaces. They are not canonical project state.
 
 ## Modularity and Tool Boundaries
@@ -39,17 +41,25 @@ Do not introduce a second canonical datastore merely for convenience. Tool-speci
 - code and tests — executable current truth
 - Git history — historical record
 
-Do not maintain a separate archive of completed changes. When active work is complete, fold durable knowledge into current-state artifacts and remove the active change artifact. Git preserves the history.
+Do not maintain a separate archive of completed changes. When active work is complete, fold durable knowledge into the most appropriate current-truth surface — code, tests, module docs, specs, architecture docs, or ADRs — and remove the active change artifact. Behavior already captured clearly in code, tests, or module docs does not need to be duplicated in `docs/specs/`. Git preserves the history.
+
+## Roles and Runtimes
+
+Agent identities are roles, such as `architect`, `implementer`, or `reviewer`. Each configured role is described in `.agents/<role-id>.md`.
+
+The runtime (model, vendor, or tool) that fulfills a role is assigned at invocation time and is not recorded in the repository. A role may be fulfilled by different runtimes in different sessions without changing this workflow.
+
+Role responsibility and runtime capability are separate. An agent acts only within the capabilities its runtime actually provides. When a required action is unavailable to the runtime (for example push, PR creation, review publishing, or merge), the agent hands that action to the human or another capable agent and keeps its lifecycle responsibility.
 
 ## Agent Bootstrap
 
-Agent identity must come from the execution environment or invocation prompt. The repository defines what that identity means.
+Agent identity (its role ID) must come from the execution environment or invocation prompt. The repository defines what that identity means.
 
 Before working, every agent must read:
 
 1. `WORKFLOW.md`
 2. `AGENTS.md`
-3. `.agents/<its-agent-id>.md`
+3. `.agents/<its-role-id>.md`
 4. `docs/WORK_TRACKING.md`
 5. relevant current-state artifacts
 6. the relevant active change, if one exists
@@ -72,6 +82,36 @@ A request such as `sync repo` means:
 
 If repository access is unavailable, say so rather than silently using stale context.
 
+## Branch Model
+
+### `main` — stable
+
+- Stable, releasable current truth.
+- Active-change coordination artifacts are never introduced directly on `main`.
+- Changes reach `main` through a reviewed PR from `develop`.
+- Direct updates are reserved for explicit repository administration, bootstrap, or emergency repair by the human operator.
+
+### `develop` — integration
+
+- Reviewed integration truth; may be ahead of `main`.
+- New feature branches start from the latest `develop`.
+- Feature branches merge back into `develop` through PR review.
+
+### Feature branches
+
+- Named `feature/<change-id>` by default.
+- Carry the active `CHANGE.md`, branch-local status, implementation, tests, and current-truth updates for one change.
+
+### Protected Branch Policy
+
+`main` and `develop` are protected integration branches. Implementers may edit, test, commit, push their own feature branch, and update its PR. Implementers must not:
+
+- push directly to `main` or `develop`, or push any refspec whose destination is `main` or `develop`;
+- set `main` or `develop` as an upstream or push target;
+- bypass this policy with force, mirror, or all-branches pushes.
+
+This workflow defines the policy. Runtime-specific enforcement (for example agent tool hooks) belongs in runtime adapters. Local Git hooks and repository-host branch protection or rulesets are stronger complementary layers.
+
 ## Active Change Lifecycle
 
 Use the lightest path that preserves transferable project state.
@@ -86,9 +126,17 @@ For non-trivial committed work:
 
 `Explore → Active Change → Implement → Verify → Fold Current Truth → Remove Active Change → Merge`
 
-An active change normally needs only:
+An active change lives on its feature branch and normally needs only:
 
 `docs/changes/<change-id>/CHANGE.md`
+
+Before a completed feature merges into `develop`:
+
+1. verify acceptance criteria;
+2. fold durable knowledge into the most appropriate current-truth surface;
+3. remove the active change artifact;
+4. make branch-local status match the expected post-merge state of `develop`;
+5. merge through PR review.
 
 Add `DESIGN.md` only when the change is complex enough to benefit from it.
 
@@ -154,7 +202,7 @@ When an accepted decision changes current behavior or architecture, update the c
 
 When work uses a pull request, the assigned implementer owns it until handoff or merge.
 
-Within its runtime capabilities and authority, the implementer should:
+PR ownership is lifecycle responsibility, not a guarantee of repository-host permissions. Within its runtime capabilities and authority, the implementer should:
 
 - keep the PR scoped to the active change
 - respond to actionable review feedback
@@ -162,7 +210,43 @@ Within its runtime capabilities and authority, the implementer should:
 - update tests and current-state documentation when needed
 - push follow-up fixes to the same PR when supported
 
+If the runtime cannot push, create or update the PR, or read feedback, the implementer hands that specific action to the human or another capable agent and remains the owner.
+
 PR comments coordinate work; durable outcomes must be reflected in repository state before merge.
+
+## Autonomous Change Execution
+
+Once the human finalizes a change intent and the architect materializes the active change on a feature branch, the default path needs no further human coordination until the PR is ready for human merge review:
+
+```text
+implementer takes ownership
+        ↓
+implement → test → commit → push feature branch
+        ↓
+create/update PR targeting develop
+        ↓
+reviewer runs; CI runs
+        ↓
+actionable findings or failures? ── yes → implementer fixes, commits, pushes ─┐
+        │ no                                                                   │
+        ↓                                                                      │
+final verification ←───────────────────────────────────────────────────────────┘
+        ↓
+ready-for-human-merge
+```
+
+- The terminal state is `ready-for-human-merge`. Agents do not merge into `develop` or `main` unless their configured authority explicitly allows it.
+- Human attention is requested only for ambiguity, consequential decisions, authority limits, blocked credentials or infrastructure, and the final merge decision.
+- Automated review, CI, and human PR comments are all feedback. The implementer consumes them when its runtime supports it and iterates until the PR is clean or an issue exceeds its authority or capability.
+- Actionable human feedback that preserves the accepted intent and scope reopens the same loop: sync feedback → implement → test → push → re-verify.
+- Human feedback that materially changes the intent, acceptance criteria, architecture, or scope ends the current change: close the PR without merging and start a new change, feature branch, and PR from the appropriate integration baseline. The new change states its intent and acceptance criteria explicitly and may carry forward only still-valid artifacts such as regression tests, reusable implementation, or verified findings. The closed PR is historical evidence, not current truth.
+- If it is unclear whether feedback is a refinement or a new change, escalate rather than silently expanding scope.
+
+### Runtime Credentials
+
+- An implementer runtime may use a repository-scoped credential to push its feature branch and create or update its PR.
+- Credentials are never stored in repository files.
+- Branch policy must prevent that credential or runtime from updating `main` or `develop` directly; repository-host branch protection is the authoritative layer.
 
 ## Review Rules
 
@@ -177,6 +261,8 @@ Review against:
 
 Reviewers should identify actionable problems before rewriting implementation unless explicitly assigned to fix them.
 
+Publishing findings as a PR review or comment is preferred. If the reviewer's runtime cannot write to the PR, returning the findings to the invoking human or agent is a valid fallback; a transport failure alone does not invalidate a completed review.
+
 ## Project Status
 
 `docs/status/CURRENT.md` is the operator dashboard, not a historical report.
@@ -190,6 +276,14 @@ It should make it possible for a human replacement to quickly answer:
 - What should happen next?
 
 Derive status from repository evidence. Do not infer it from chat history. Do not maintain status archives by default; Git preserves prior versions.
+
+Status is branch-sensitive:
+
+- on `main`, it describes the stable integrated state;
+- on `develop`, it describes the integration state;
+- on a feature branch, it describes that branch's active change and review state.
+
+A branch being merged must carry status that is correct for the target branch after the merge, so that merging does not leave the target's status stale.
 
 ## Human Handoff Requirement
 
