@@ -18,3 +18,15 @@ Dogfood this monorepo:
 ```bash
 python init/init.py --self
 ```
+
+Show the protocol version shipped with this checkout (reads `spec/VERSION`, writes nothing):
+
+```bash
+python init/init.py --version
+```
+
+## Test
+
+```bash
+python -m unittest discover -s init/tests
+```

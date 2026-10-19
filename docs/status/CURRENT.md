@@ -4,15 +4,15 @@ Updated: 2026-10-16
 
 ## Current Objective
 
-Add a minimal `--version` flag to the initializer while keeping `spec/VERSION` as the single protocol-version source of truth.
+The initializer `--version` flag (reports the protocol version from `spec/VERSION`) is implemented in PR #1 and awaiting final review and merge. No further objective is set.
 
 ## Active Changes
 
-- `docs/changes/add-init-version-flag/CHANGE.md` — Planned, owned by `claude-code`.
+- None.
 
 ## Human Attention
 
-- None.
+- PR #1 (`add-init-version-flag`) is ready for re-review and a merge decision.
 
 ## Blockers / Risks
 
@@ -20,7 +20,8 @@ Add a minimal `--version` flag to the initializer while keeping `spec/VERSION` a
 
 ## Next
 
-- Claude Code implements the active change and adds relevant test coverage.
+- Review and merge PR #1.
+- Operator sets the next objective.
 
 ## Current Truth References
 
