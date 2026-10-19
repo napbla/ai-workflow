@@ -142,8 +142,11 @@ Automation expectations:
 - Review and CI feedback should be consumed automatically when the runtime supports it.
 - Human PR comments/reviews are first-class feedback: any actionable human feedback returns the PR to the implementation loop until it is addressed and re-verified.
 - The implementer remains responsible for iterating on actionable automated-review, CI, and human-review feedback until the PR is clean or an issue exceeds its authority/capability.
-- Human feedback that changes intent, acceptance criteria, architecture, or scope must be materialized into the active change/current truth before implementation continues when that information must survive the PR conversation.
-- If human feedback conflicts with current specs/architecture or is ambiguous/consequential, escalate for clarification instead of guessing.
+- Human feedback that is implementation-level and preserves the accepted intent/scope stays in the same PR loop.
+- Human feedback that materially changes the accepted intent, acceptance criteria, architecture, or scope ends the current change instead of mutating the existing PR into a different job.
+- In that case, close the current PR/change without merging, create a new change/feature branch/PR from the appropriate integration baseline, and carry forward only artifacts that remain valid (for example end-to-end/regression tests, reusable implementation pieces, or verified findings).
+- The new change must state the new intent and acceptance criteria explicitly; the closed PR remains historical coordination evidence, not current truth.
+- If it is unclear whether feedback is a refinement or a materially new change, escalate rather than silently expanding scope.
 - Human attention is requested only for ambiguity, consequential decisions, blocked credentials/infrastructure, or the final merge decision.
 - The terminal state for autonomous execution is `ready-for-human-merge`, not automatic merge into `develop` or `main`.
 - Runtime-specific automation mechanisms (for example Claude Code review/fix loops or hooks) are adapters; the protocol defines the lifecycle contract rather than requiring a particular vendor feature.
@@ -160,8 +163,9 @@ Automation expectations:
 - [ ] PR ownership supports capability-aware handoff.
 - [ ] After human intent finalization, the normal workflow can run autonomously through implementation, tests, feature-branch push, PR creation/update, review-feedback iteration, and final verification until `ready-for-human-merge`.
 - [ ] Human interaction is not required during the autonomous loop unless risk, ambiguity, authority, credentials, or infrastructure require escalation.
-- [ ] Actionable human PR comments automatically re-open the implementation loop: sync feedback → implement → test → push → re-verify until the PR is ready for human merge again.
-- [ ] Durable intent/scope decisions made in PR discussion are materialized into repository state rather than existing only as PR comments.
+- [ ] Actionable human PR comments that preserve the accepted change intent re-open the implementation loop: sync feedback → implement → test → push → re-verify until the PR is ready for human merge again.
+- [ ] Human feedback that materially changes intent, acceptance criteria, architecture, or scope closes the current PR/change and starts a new feature branch/PR rather than mutating the old one.
+- [ ] A replacement change may reuse still-valid evidence such as end-to-end/regression tests and implementation fragments, but its new intent and acceptance criteria are materialized explicitly in repository state.
 - [ ] Runtime credentials are never stored in repository state and cannot directly update protected integration branches.
 - [ ] Reviewer workflow has a fallback when PR publishing is unavailable.
 - [ ] Completion rules require appropriate current truth instead of mandatory `docs/specs/` duplication.
