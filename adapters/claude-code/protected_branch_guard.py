@@ -28,6 +28,26 @@ ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 GIT_REPO_OPTIONS = {"-C", "--git-dir", "--work-tree"}
 GIT_GLOBAL_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix", "--config-env"}
 PUSH_WITH_VALUE = {"--repo", "-o", "--push-option", "--receive-pack", "--exec"}
+# Long options the guard inspects; Git accepts any unique prefix of a long option.
+PUSH_LONG = ["--all", "--branches", "--mirror", "--repo", "--push-option", "--receive-pack", "--exec", "--set-upstream"]
+BRANCH_LONG = ["--set-upstream-to", "--track", "--no-track"]
+CHECKOUT_LONG = ["--create", "--force-create", "--track", "--no-track"]
+
+
+def expand_long_options(args: list[str], known: list[str]) -> list[str]:
+    """Expand unambiguous abbreviations such as `--mir` to `--mirror` (keeping any `=value`)."""
+    expanded: list[str] = []
+    for arg in args:
+        if arg == "--":
+            expanded.extend(args[len(expanded):])
+            break
+        name, equals, value = arg.partition("=")
+        if name.startswith("--") and len(name) > 2 and name not in known:
+            matches = [option for option in known if option.startswith(name)]
+            if len(matches) == 1:
+                arg = matches[0] + equals + value
+        expanded.append(arg)
+    return expanded
 
 
 def branch_name(ref: str) -> str:
@@ -182,7 +202,9 @@ def push_remote(branch: str | None, repo: list[str]) -> str:
 
 
 def check_push(args: list[str], repo: list[str], push_default: str | None = None) -> str | None:
+    args = expand_long_options(args, PUSH_LONG)
     positionals: list[str] = []
+    repo_option: str | None = None
     index = 0
     while index < len(args):
         arg = args[index]
@@ -191,7 +213,11 @@ def check_push(args: list[str], repo: list[str], push_default: str | None = None
             break
         if arg in {"--all", "--branches", "--mirror"}:
             return f"`git push {arg}` would push protected branches"
+        if arg.startswith("--repo="):
+            repo_option = arg.split("=", 1)[1]
         if arg in PUSH_WITH_VALUE:
+            if arg == "--repo" and index + 1 < len(args):
+                repo_option = args[index + 1]
             index += 2
             continue
         if not arg.startswith("-"):
@@ -201,7 +227,7 @@ def check_push(args: list[str], repo: list[str], push_default: str | None = None
     refspecs = positionals[1:]
     if not refspecs:
         branch = current_branch(repo)
-        remote = positionals[0] if positionals else push_remote(branch, repo)
+        remote = positionals[0] if positionals else repo_option or push_remote(branch, repo)
         if (git_output(repo, "config", "--type=bool", "--get", f"remote.{remote}.mirror") or "") == "true":
             return f"remote `{remote}` is configured to mirror, which pushes every ref including protected branches"
         for configured in (git_output(repo, "config", "--get-all", f"remote.{remote}.push") or "").splitlines():
@@ -234,6 +260,7 @@ def check_upstream_value(value: str) -> str | None:
 
 
 def check_branch(args: list[str]) -> str | None:
+    args = expand_long_options(args, BRANCH_LONG)
     for index, arg in enumerate(args):
         if arg.startswith("--set-upstream-to="):
             return check_upstream_value(arg.split("=", 1)[1])
@@ -276,7 +303,7 @@ def split_attached(args: list[str], create_flags: set[str]) -> list[str]:
 
 
 def check_checkout(args: list[str], create_flags: set[str]) -> str | None:
-    args = split_attached(args, create_flags)
+    args = split_attached(expand_long_options(args, CHECKOUT_LONG), create_flags)
     if not create_flags & set(args):
         return None
     # Drop the new branch name that follows the create flag; what remains is the start point.

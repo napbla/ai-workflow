@@ -173,6 +173,23 @@ class DeniedCommandsTest(RepoTestCase):
                 self.assertDenied(command)
         self.assertAllowed("git push")
 
+    def test_abbreviated_long_options_are_expanded(self) -> None:
+        for command in [
+            "git push --mir origin",
+            "git push --br origin",
+            "git push --al origin",
+            "git branch --set-upstream=origin/develop",
+            "git switch --cr=feature/y origin/main",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git checkout -b feature/y --no-tr origin/develop")
+
+    def test_repo_option_selects_remote_for_configured_push(self) -> None:
+        git(self.repo, "config", "remote.other.push", "HEAD:refs/heads/main")
+        self.assertDenied("git push --repo=other")
+        self.assertDenied("git push --repo other")
+        self.assertAllowed("git push --repo=origin")
+
     def test_attached_upstream_option_is_denied(self) -> None:
         self.assertDenied("git branch -uorigin/develop")
         self.assertAllowed("git branch -uorigin/feature/x")
