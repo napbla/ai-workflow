@@ -366,11 +366,68 @@ class DeniedCommandsTest(RepoTestCase):
             "git grep -n git -- '*.py'",
             "ls ~/.config/git -la",
             "brew install git --quiet",
-            "echo git push origin main",
+            "echo 'git push origin main'",
+            "echo git push origin feature/x",
             "which git && git --version",
             "find . -name '*.git' -type d",
         ]:
             self.assertAllowed(command)
+
+    def test_unquoted_git_phrase_with_protected_target_is_checked(self) -> None:
+        # Backstop for unmodelled wrappers: `git <subcommand>` anywhere is checked; quote prose instead.
+        self.assertDenied("echo git push origin main")
+        self.assertDenied("unknown-wrapper --flag git push origin main")
+
+    def test_new_branch_without_start_point_starts_at_head(self) -> None:
+        git(self.repo, "checkout", "-q", "develop")
+        git(self.repo, "config", "branch.develop.remote", "origin")
+        git(self.repo, "config", "branch.develop.merge", "refs/heads/develop")
+        for command in [
+            "git switch -c feat2 --track=inherit",
+            "git branch --track=inherit feat2",
+            "git branch -t feat2",
+            "git switch -c feat2 -t",
+            "git -c branch.autoSetupMerge=inherit checkout -b feat2",
+            "git -c branch.autoSetupMerge=always branch feat2",
+        ]:
+            self.assertDenied(command)
+        for command in ["git branch feat2", "git switch -c feat2", "git branch -d feat2", "git branch --list", "git branch -v"]:
+            self.assertAllowed(command)
+
+    def test_config_section_rename_is_checked(self) -> None:
+        git(self.repo, "config", "branch.develop.merge", "refs/heads/develop")
+        git(self.repo, "config", "remote.other.push", "HEAD:refs/heads/main")
+        for command in [
+            "git config --rename-section branch.develop branch.feat2",
+            "git config rename-section branch.develop branch.feat2",
+            "git config --rename-section remote.other remote.origin2",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("git config --rename-section branch.feature/x branch.feature/y")
+
+    def test_more_wrappers_and_trap_are_checked(self) -> None:
+        for command in [
+            "time -p git push origin feature/x:main",
+            "/usr/bin/time git push origin feature/x:main",
+            "arch -arm64 git push origin feature/x:main",
+            "sudo -iu root git push origin main",
+            "trap 'git push origin feature/x:main' EXIT",
+        ]:
+            self.assertDenied(command)
+        self.assertAllowed("time git status")
+
+    def test_stdin_shell_forms_are_checked(self) -> None:
+        for command in [
+            "printf 'git push origin feature:%s\\n' main | bash",
+            "echo 'git push origin feature/x:main' | bash /dev/stdin",
+            "echo 'git push origin feature/x:main' | bash -",
+            "echo -e 'git push origin \\x6dain' | bash",
+        ]:
+            self.assertDenied(command)
+
+    def test_heredoc_owned_by_non_shell_command_is_data(self) -> None:
+        self.assertAllowed("bash build.sh && cat > notes.txt <<EOF\ngit push origin main\nEOF")
+        self.assertDenied("cat notes.txt && bash <<EOF\ngit push origin main\nEOF")
 
     def test_find_exec_target_is_checked(self) -> None:
         self.assertDenied("find . -maxdepth 0 -exec git push origin main \\;")

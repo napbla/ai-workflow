@@ -30,7 +30,7 @@ REDIRECT_CHARS = set("<>&|")
 HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 # Shell words after which the next word is again in command position.
-KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "time"}
+KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}"}
 # Wrappers that run a command given later in their arguments, with their value-taking options.
 WRAPPERS = {
     "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"},
@@ -46,8 +46,11 @@ WRAPPERS = {
     "nohup": set(),
     "caffeinate": {"-t", "-w"},
     "chronic": set(),
+    "time": {"-o", "-f", "--output", "--format"},
+    "arch": {"-arch", "-e", "-d"},
 }
 UNVERIFIABLE_SCRIPT = "\0unverifiable"
+STDIN_PATHS = {"/dev/stdin", "/dev/fd/0", "-"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 FIND_EXEC = {"-exec", "-execdir", "-ok", "-okdir"}
 NUMERIC = re.compile(r"^\d+(\.\d+)?[smhd]?$")
@@ -67,10 +70,10 @@ GIT_GLOBAL_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", 
 GIT_CONTEXT_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--config-env"}
 
 # `git config` actions that read or remove rather than write.
-CONFIG_READ_SUBCOMMANDS = {"get", "list", "unset", "remove-section", "rename-section", "edit"}
+CONFIG_READ_SUBCOMMANDS = {"get", "list", "unset", "remove-section", "edit"}
 CONFIG_READ_OPTIONS = {
     "--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool", "-l", "--list",
-    "--unset", "--unset-all", "--remove-section", "--rename-section", "-e", "--edit",
+    "--unset", "--unset-all", "--remove-section", "-e", "--edit",
 }
 # Config keys that can redirect a push or upstream, matched wherever they appear in `git config` arguments.
 SENSITIVE_CONFIG_KEY = re.compile(r"^(remote\..+\.(push|mirror)|branch\..+\.merge|push\.default|branch\.autosetupmerge)$", re.IGNORECASE)
@@ -81,6 +84,12 @@ PUSH_LONG = ["--all", "--branches", "--mirror", "--repo", "--push-option", "--re
 PUSH_WITH_VALUE = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--recurse-submodules"}
 BRANCH_LONG = ["--set-upstream-to", "--track", "--no-track", "--copy", "--move"]
 BRANCH_WITH_VALUE = {"-u", "--set-upstream-to"}
+# `git branch` modes that list, delete, or edit instead of creating a branch.
+BRANCH_NON_CREATE = {
+    "-d", "-D", "--delete", "-l", "--list", "-a", "--all", "-r", "--remotes", "--show-current",
+    "--edit-description", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at",
+    "--unset-upstream", "-v", "-vv", "--verbose",
+}
 CHECKOUT_LONG = ["--create", "--force-create", "--track", "--no-track", "--orphan", "--unified", "--conflict"]
 CHECKOUT_WITH_VALUE = {"-b", "-B", "-c", "-C", "-U", "--create", "--force-create", "--orphan", "--unified"}
 WORKTREE_ADD_LONG = ["--track", "--no-track", "--reason"]
@@ -240,9 +249,18 @@ def strip_heredoc_bodies(command: str) -> tuple[str, list[str]]:
             continue
         kept.append(line)
         unquoted, quote = unquoted_positions(line, quote)
-        is_shell = any(os.path.basename(word) in SHELLS for word in line.split())
-        pending = [(m.group(3), m.group(1) == "-", is_shell, []) for m in HEREDOC.finditer(line) if m.start() in unquoted]
+        pending = [
+            (m.group(3), m.group(1) == "-", heredoc_feeds_shell(line[: m.start()]), [])
+            for m in HEREDOC.finditer(line)
+            if m.start() in unquoted
+        ]
     return "\n".join(kept), shell_bodies
+
+
+def heredoc_feeds_shell(before: str) -> bool:
+    """Whether the simple command that owns a heredoc (text before `<<` on its line) is a shell."""
+    owner = re.split(r"[;&|()]", before)[-1]
+    return any(os.path.basename(word) in SHELLS for word in owner.split())
 
 
 def tokenize(text: str) -> list[str]:
@@ -337,12 +355,22 @@ def command_positions(tokens: list[str]) -> list[tuple[int, bool]]:
                 index += 1
                 break
             if arg.startswith("-") and len(arg) > 1:
-                index += 2 if arg in value_options else 1
+                index += 2 if takes_separate_value(arg, value_options) else 1
             elif ASSIGNMENT.match(arg) or (program == "timeout" and NUMERIC.match(arg)):
                 index += 1
             else:
                 break
     return positions
+
+
+def takes_separate_value(arg: str, value_options: set[str]) -> bool:
+    """Whether a wrapper option consumes the next token, including short clusters such as `sudo -iu root`."""
+    if arg in value_options or arg.startswith("--"):
+        return arg in value_options
+    for position, char in enumerate(arg[1:], start=1):
+        if f"-{char}" in value_options:
+            return position == len(arg) - 1  # value attached unless the option ends the cluster
+    return False
 
 
 def nested_scripts(tokens: list[str], positions: list[tuple[int, bool]], previous: list[str] | None) -> list[str]:
@@ -360,13 +388,16 @@ def nested_scripts(tokens: list[str], positions: list[tuple[int, bool]], previou
                         scripts.append(rest[script_index])
                     break
             scripts.extend(rest[position + 1] for position, arg in enumerate(rest[:-1]) if arg == "<<<")
+            operands = [arg for arg in rest if not arg.startswith("-") or arg == "-"]
             reads_stdin = not any(SHELL_COMMAND_FLAG.match(arg) for arg in rest) and (
-                "-s" in rest or not [arg for arg in rest if not arg.startswith("-")]
+                "-s" in rest or not operands or operands[0] in STDIN_PATHS
             )
             if reads_stdin and previous is not None:
                 scripts.append(piped_script(previous))
         elif program == "eval" and rest:
             scripts.append(" ".join(rest))
+        elif program == "trap" and rest and not rest[0].startswith("-"):
+            scripts.append(rest[0])
         elif program == "env":
             for position, arg in enumerate(rest):
                 if arg in {"-S", "--split-string"} and position + 1 < len(rest):
@@ -384,7 +415,11 @@ def piped_script(stage: list[str]) -> str:
     program = os.path.basename(stage[0]) if stage else ""
     if program in {"echo", "printf"}:
         words = [word for word in stage[1:] if not (word.startswith("-") and program == "echo")]
-        return " ".join(words).replace("\\n", "\n")
+        text = " ".join(words)
+        # Format directives and escapes other than \n can assemble text the guard cannot see.
+        if (program == "printf" and "%" in text) or re.search(r"\\[^n]", text):
+            return UNVERIFIABLE_SCRIPT
+        return text.replace("\\n", "\n")
     return UNVERIFIABLE_SCRIPT
 
 
@@ -524,8 +559,9 @@ def track_mode(args: list[str], repo: list[str]) -> str:
 def check_start_point(start_point: str | None, args: list[str], repo: list[str]) -> str | None:
     """A new branch from a remote-tracking start point (or with --track) gets that branch as upstream."""
     mode = track_mode(args, repo)
-    if start_point is None or mode == "no-track":
+    if mode == "no-track":
         return None
+    start_point = start_point or "HEAD"  # Git starts a new branch at HEAD when none is given
     branch, remote_tracking = ref_info(start_point, repo)
     if mode == "inherit" and not remote_tracking:
         upstream = protected_upstream(branch, repo)
@@ -552,7 +588,9 @@ def check_branch(args: list[str], repo: list[str]) -> str | None:
         if upstream:
             return f"copying or renaming `{source}` would carry its protected upstream `{upstream}` to the new branch"
         return None
-    return check_start_point(positionals[-1] if len(positionals) >= 2 else None, args, repo)
+    if not positionals or BRANCH_NON_CREATE & set(args):
+        return None
+    return check_start_point(positionals[1] if len(positionals) >= 2 else None, args, repo)
 
 
 def check_create(args: list[str], create_flags: set[str], start_index: int, repo: list[str], known_long: list[str], with_value: set[str]) -> str | None:
@@ -565,8 +603,10 @@ def check_create(args: list[str], create_flags: set[str], start_index: int, repo
     return check_start_point(start_point, args, repo)
 
 
-def check_config(args: list[str]) -> str | None:
+def check_config(args: list[str], repo: list[str]) -> str | None:
     """Check `git config` writes; sensitive keys are found by name so option layout does not matter."""
+    if "--rename-section" in args or args[:1] == ["rename-section"]:
+        return check_rename_section(args, repo)
     if args[:1] and args[0] in CONFIG_READ_SUBCOMMANDS or any(arg.split("=", 1)[0] in CONFIG_READ_OPTIONS for arg in args):
         return None  # queries and removals take a value *pattern*, not a value being written
     for index, arg in enumerate(args[:-1]):
@@ -574,6 +614,20 @@ def check_config(args: list[str]) -> str | None:
             reason = check_config_value(arg, args[index + 1])
             if reason:
                 return reason
+    return None
+
+
+def check_rename_section(args: list[str], repo: list[str]) -> str | None:
+    """Renaming a section moves its settings (upstream, push refspecs, mirror) to a new name."""
+    operands = [arg for arg in args if not arg.startswith("-") and arg != "rename-section"]
+    if not operands:
+        return None
+    section = operands[0]
+    kind, _, name = section.partition(".")
+    if kind.lower() == "branch" and name and (name in PROTECTED or protected_upstream(name, repo)):
+        return f"renaming config section `{section}` would move a protected branch's tracking settings"
+    if kind.lower() == "remote" and name and configured_push_problem(name, repo):
+        return f"renaming config section `{section}` would move push settings that target protected branches"
     return None
 
 
@@ -642,7 +696,7 @@ def check_git(args: list[str], cwd: str | None, via_xargs: bool = False) -> str 
     if subcommand == "worktree" and rest[:1] == ["add"]:
         return check_create(rest[1:], {"-b", "-B"}, 1, repo, WORKTREE_ADD_LONG, WORKTREE_ADD_WITH_VALUE)
     if subcommand == "config":
-        return check_config(rest)
+        return check_config(rest, repo)
     if subcommand == "remote":
         return check_remote(rest)
     return None
@@ -662,6 +716,14 @@ def check_command(command: str, cwd: str | None = None) -> str | None:
         for index, via_xargs in positions:
             if os.path.basename(tokens[index]) == "git":
                 reason = check_git(tokens[index + 1:], cwd, via_xargs)
+                if reason:
+                    return reason
+        # Backstop for wrappers the guard does not model: a `git <inspected subcommand>` sequence
+        # anywhere in the arguments is checked too (a plain mention such as `grep git` is not).
+        command_indexes = {index for index, _ in positions}
+        for index, token in enumerate(tokens[:-1]):
+            if index not in command_indexes and os.path.basename(token) == "git" and tokens[index + 1] in INSPECTED:
+                reason = check_git(tokens[index + 1:], cwd)
                 if reason:
                     return reason
     return None
