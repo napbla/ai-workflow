@@ -12,13 +12,12 @@ Protocol v2 is integrated on `develop`: role-based agent identities with runtime
 
 ## Human Attention
 
-- Confirm GitHub protection of `main` and `develop` with the agent runtime's credential: `GH_TOKEN=<token> python check/branch_protection.py` must exit 0. An anonymous check finds an active ruleset that requires a PR and blocks force pushes and deletion on both branches, but it cannot confirm that agent credentials are excluded from bypass, so protection is unverified until an authenticated run passes.
 - Confirm the implementer-proposed fixed protected branch names (decision 3 in `docs/adr/0001-protocol-v2-roles-and-branch-model.md`).
 - Decide when to release protocol v2 from `develop` to `main`.
 
 ## Blockers / Risks
 
-- Protection is unverified until an authenticated `check/branch_protection.py` run exits 0.
+- None. `check/branch_protection.py`, run with the implementer's credential on 2026-10-19, exited 0: an active ruleset with no bypass actors requires a PR and blocks force pushes and deletion on both `main` and `develop`. Re-run it whenever agent credentials or rulesets change.
 
 ## Next
 
