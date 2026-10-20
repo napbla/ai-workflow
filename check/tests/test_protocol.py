@@ -219,6 +219,22 @@ class ProtocolValidatorTest(unittest.TestCase):
             )
             self.assertIn("duplicate Areas mapping for path: src/a.py", repo.messages())
 
+    def test_realization_map_rejects_duplicate_change_ids(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
+                "## Realization Map\n\n"
+                "Changes:\n"
+                "- `work` — Realized\n"
+                "- `work` — in progress\n\n"
+                "Areas:\n\n"
+                "Tests:\n\n"
+                "Current-truth docs:\n",
+            )
+            self.assertIn("duplicate Changes entry for change-id: work", repo.messages())
+
     def test_realized_mapping_must_exist_in_repository(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -261,6 +277,40 @@ class ProtocolValidatorTest(unittest.TestCase):
                 "| ghost | Realized | `src/**` |\n",
             )
             self.assertIn("noncanonical Design index row", repo.messages())
+
+    def test_index_label_must_match_linked_design_id(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("src/a.py", "")
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                design_text("Implementing", [("src/a.py", "Realized")]),
+            )
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "| [wrong-label](example/DESIGN.md) | Implementing | `src/a.py` |\n",
+            )
+            self.assertIn("does not match linked Design ID 'example'", repo.messages())
+
+    def test_index_rejects_duplicate_areas_in_one_row(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("src/a.py", "")
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                design_text("Implementing", [("src/a.py", "Realized")]),
+            )
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "| [example](example/DESIGN.md) | Implementing | `src/a.py`, `src/a.py` |\n",
+            )
+            self.assertIn("duplicate realized source area in row", repo.messages())
 
     def test_index_rows_must_be_contiguous_with_header(self) -> None:
         tmp, repo = self.make_repo()
