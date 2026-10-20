@@ -179,6 +179,7 @@ def main() -> int:
     )
     agents_md = load_template("AGENTS.md").substitute(role_registry=registry)
     work_tracking_md = load_template("WORK_TRACKING.md").substitute()
+    designs_index_md = load_template("DESIGNS_INDEX.md").substitute()
     status_md = load_template("STATUS.md").substitute(
         project_name=project_name,
         updated_date=date.today().isoformat(),
@@ -194,6 +195,7 @@ def main() -> int:
             write_file(target / ".agents" / f"{role_id}.md", render_role(role_id, roles[role_id]), conflict_mode)
 
         write_file(target / "docs" / "WORK_TRACKING.md", work_tracking_md, conflict_mode)
+        write_file(target / "docs" / "designs" / "INDEX.md", designs_index_md, conflict_mode)
         write_file(target / "docs" / "status" / "CURRENT.md", status_md, conflict_mode)
 
         for directory in ["docs/architecture", "docs/specs", "docs/adr", "docs/changes"]:
@@ -206,7 +208,7 @@ def main() -> int:
         return 130
 
     print("\nInitialization complete.")
-    print("Invoke an agent runtime with a role ID, then have it read WORKFLOW.md, AGENTS.md, docs/WORK_TRACKING.md, and .agents/<role-id>.md.")
+    print("Invoke an agent runtime with a role ID, then have it read WORKFLOW.md, AGENTS.md, docs/WORK_TRACKING.md, docs/status/CURRENT.md, docs/designs/INDEX.md, and .agents/<role-id>.md.")
     return 0
 
 
