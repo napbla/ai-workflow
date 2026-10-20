@@ -15,6 +15,21 @@ check/      validation module (GitHub branch protection check; protocol validati
 
 Consumers such as dashboards or agent runners should live in separate repositories and consume the protocol rather than becoming part of core.
 
+## Protocol v3
+
+v3 separates project evolution into:
+
+```text
+Design → one or more Changes → source changes
+```
+
+- Designs describe accepted target/conceptual state.
+- Changes describe coherent transformations.
+- Source changes implement Changes.
+- Realization Maps + `docs/designs/INDEX.md` let agents find which Design explains current code without rereading the whole repository.
+
+See `spec/SPEC.md` and `WORKFLOW.md` for the contract.
+
 ## Dependency Direction
 
 ```text
@@ -34,7 +49,7 @@ Consumers such as dashboards or agent runners should live in separate repositori
 - human involvement by risk/uncertainty/authority
 - vendor-neutral roles
 - small composable tools
-- protocol changes are explicit and versioned
+- explicit versioned protocol semantics
 
 ## Bootstrap a Project
 
@@ -43,7 +58,9 @@ python -m pip install -r init/requirements.txt
 python init/init.py --target /path/to/repository
 ```
 
-The initializer asks for the project name and the role IDs to configure (default: `architect`, `implementer`, `reviewer`). The generated project declares the protocol version in `.ai-workflow.yml`.
+The initializer creates the v3 repository contract including `docs/designs/INDEX.md`, then asks for project name and configured role IDs.
+
+A brand-new project should create and accept its initial Design before implementation begins.
 
 ## Test
 
@@ -58,4 +75,4 @@ python -m unittest discover -s check/tests
 python init/init.py --self
 ```
 
-See `HUMAN_SETUP.md` for the human operating flow and `spec/SPEC.md` for the protocol contract.
+See `HUMAN_SETUP.md` for the human operating flow.
