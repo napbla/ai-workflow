@@ -43,6 +43,7 @@ INDEX_ROW_RE = re.compile(
     r"^\|\s*\[([^\]]+)\]\(([^)]+/DESIGN\.md)\)\s*\|\s*(\w+)\s*\|\s*(.*?)\s*\|\s*$"
 )
 BACKTICK_VALUE_RE = re.compile(r"`([^`]+)`")
+INDEX_AREAS_CELL_RE = re.compile(r"^\s*`[^`]+`(?:\s*,\s*`[^`]+`)*\s*$")
 
 MAP_SECTIONS = ("Areas:", "Tests:", "Current-truth docs:")
 REQUIRED_MAP_LABELS = ("Changes:", *MAP_SECTIONS)
@@ -103,7 +104,12 @@ def unfenced_lines(text: str) -> list[str]:
                 fence_len = 0
             result.append("")
             continue
-        result.append("" if in_fence else line)
+        if in_fence:
+            result.append("")
+        elif line.startswith("    ") or line.startswith("\t"):
+            result.append("")
+        else:
+            result.append(line)
     return result
 
 
@@ -328,6 +334,11 @@ def parse_index(target: Path) -> tuple[dict[str, IndexRow], list[Violation]]:
             continue
 
         _, link, status, areas_cell = match.groups()
+        if not INDEX_AREAS_CELL_RE.match(areas_cell):
+            violations.append(
+                Violation("docs/designs/INDEX.md", f"invalid realized source areas cell: {areas_cell.strip()}")
+            )
+            continue
         design_path = (Path("docs/designs") / link).as_posix()
         areas = frozenset(BACKTICK_VALUE_RE.findall(areas_cell))
         if design_path in rows:
