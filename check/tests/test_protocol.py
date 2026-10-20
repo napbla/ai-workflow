@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import sys
 
@@ -112,6 +115,42 @@ class ProtocolValidatorTest(unittest.TestCase):
             )
             self.assertIn("Implementing Design must have an instance-level Realization Map", repo.messages())
 
+    def test_realization_map_heading_without_required_structure_is_rejected(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
+                "## Realization Map\n\n"
+                "This heading alone is not a structured map.\n",
+            )
+            messages = repo.messages()
+            self.assertIn("Realization Map is missing required sections", messages)
+            self.assertIn("Implementing Design must have an instance-level Realization Map", messages)
+
+    def test_realization_map_accepts_documented_unbackticked_paths(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("providers/contracts/provider.py", "")
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Realized\nOwner: architect\n\n"
+                "## Realization Map\n\n"
+                "Changes:\n- provider-contract — Realized\n\n"
+                "Areas:\n- providers/contracts/** — Realized\n\n"
+                "Tests:\n\n"
+                "Current-truth docs:\n\n"
+                "## Goal\nExample.\n",
+            )
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "| [example](example/DESIGN.md) | Realized | `providers/contracts/**` |\n",
+            )
+            self.assertEqual(repo.violations(), [])
+
     def test_realized_mapping_must_exist_in_repository(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -142,6 +181,19 @@ class ProtocolValidatorTest(unittest.TestCase):
             messages = repo.messages()
             self.assertIn("status is Implementing but index says Realized", messages)
             self.assertIn("extra: src/b.py", messages)
+
+
+    def test_malformed_index_data_row_is_rejected(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "| ghost | Realized | `src/**` |\n",
+            )
+            self.assertIn("invalid Design index row", repo.messages())
 
     def test_duplicate_realized_area_ownership_is_rejected(self) -> None:
         tmp, repo = self.make_repo()
@@ -192,6 +244,14 @@ class ProtocolValidatorTest(unittest.TestCase):
                 "## Goal\nWork.\n",
             )
             self.assertIn("has Design-Revision but no Design field", repo.messages())
+
+
+    def test_target_resolution_error_returns_exit_2(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch.object(protocol.Path, "resolve", side_effect=OSError("cannot resolve")), contextlib.redirect_stderr(stderr):
+            code = protocol.main(["--target", "unreadable"])
+        self.assertEqual(code, 2)
+        self.assertIn("Protocol validation could not read repository state", stderr.getvalue())
 
 
 if __name__ == "__main__":
