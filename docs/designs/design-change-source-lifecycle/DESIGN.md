@@ -8,7 +8,7 @@ Owner: architect
 Changes:
 - `implement-design-lifecycle-v3` — Realized
 - `ci-required-checks` — Realized
-- `protocol-validator` — in progress
+- `protocol-validator` — Realized
 
 Areas:
 - `WORKFLOW.md` — Realized
