@@ -159,6 +159,29 @@ class ProtocolValidatorTest(unittest.TestCase):
             )
             self.assertIn("Implementing Design must have an instance-level Realization Map", repo.messages())
 
+    def test_backtick_in_backtick_fence_info_does_not_open_fence(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("src/a.py", "")
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
+                "```bad`info\n"
+                "## Realization Map\n\n"
+                "Changes:\n- example — Realized\n\n"
+                "Areas:\n- src/a.py — Realized\n\n"
+                "Tests:\n\n"
+                "Current-truth docs:\n",
+            )
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "| [example](example/DESIGN.md) | Implementing | `src/a.py` |\n",
+            )
+            self.assertEqual(repo.violations(), [])
+
     def test_html_commented_map_and_index_rows_are_ignored(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -192,6 +215,23 @@ class ProtocolValidatorTest(unittest.TestCase):
                 "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
                 "## Realization Map\n\n"
                 "This heading alone is not a structured map.\n",
+            )
+            messages = repo.messages()
+            self.assertIn("Realization Map is missing required sections", messages)
+            self.assertIn("Implementing Design must have an instance-level Realization Map", messages)
+
+    def test_realization_map_stops_at_indented_level_two_heading(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
+                "## Realization Map\n\n"
+                "Changes:\n- example — Realized\n\n"
+                " ## Notes\n"
+                "Areas:\n- src/a.py — Realized\n"
+                "Tests:\n"
+                "Current-truth docs:\n",
             )
             messages = repo.messages()
             self.assertIn("Realization Map is missing required sections", messages)
@@ -236,6 +276,29 @@ class ProtocolValidatorTest(unittest.TestCase):
                 "    Current-truth docs:\n",
             )
             self.assertIn("Implementing Design must have an instance-level Realization Map", repo.messages())
+
+    def test_indented_html_comment_literal_does_not_hide_visible_map(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("src/a.py", "")
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
+                "    <!-- literal example\n"
+                "## Realization Map\n\n"
+                "Changes:\n- example — Realized\n\n"
+                "Areas:\n- src/a.py — Realized\n\n"
+                "Tests:\n\n"
+                "Current-truth docs:\n",
+            )
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "| [example](example/DESIGN.md) | Implementing | `src/a.py` |\n",
+            )
+            self.assertEqual(repo.violations(), [])
 
     def test_realized_mapping_must_exist_in_repository(self) -> None:
         tmp, repo = self.make_repo()
