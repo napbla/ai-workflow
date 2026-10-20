@@ -97,14 +97,13 @@ def first_section_index(lines: list[str]) -> int | None:
 def canonical_header(
     text: str,
     path: str,
-    *,
-    allowed_fields: set[str],
 ) -> tuple[dict[str, str], list[Violation], int | None]:
     """Parse the canonical top-of-file metadata block.
 
     This intentionally does not interpret Markdown. Before the first canonical
-    level-two heading, only a level-one title, blank lines, and allowed
-    `Key: value` fields are valid protocol header syntax.
+    level-two heading, only a level-one title, blank lines, and canonical
+    `Key: value` fields are valid protocol header syntax. Field names are
+    extensible; the validator extracts only the fields it needs.
     """
     lines = text.splitlines()
     section_index = first_section_index(lines)
@@ -131,9 +130,6 @@ def canonical_header(
             continue
 
         key, value = match.groups()
-        if key not in allowed_fields:
-            violations.append(Violation(path, f"unsupported metadata field: {key}"))
-            continue
         if key in fields:
             violations.append(Violation(path, f"duplicate metadata field: {key}"))
             continue
@@ -334,7 +330,6 @@ def design_violations(target: Path) -> tuple[dict[str, DesignInfo], list[Violati
         fields, header_errors, _ = canonical_header(
             text,
             relative,
-            allowed_fields={"Status", "Owner"},
         )
         violations.extend(header_errors)
 
@@ -381,11 +376,14 @@ def parse_index(target: Path) -> tuple[dict[str, IndexRow], list[Violation]]:
         return rows, violations
 
     lines = index_path.read_text(encoding="utf-8").splitlines()
-    try:
-        header_index = lines.index(INDEX_HEADER)
-    except ValueError:
+    header_positions = [index for index, line in enumerate(lines) if line == INDEX_HEADER]
+    if not header_positions:
         violations.append(Violation("docs/designs/INDEX.md", "missing canonical Design index table header"))
         return rows, violations
+    if len(header_positions) != 1:
+        violations.append(Violation("docs/designs/INDEX.md", "must contain exactly one canonical Design index table"))
+        return rows, violations
+    header_index = header_positions[0]
 
     if header_index + 1 >= len(lines) or lines[header_index + 1] != INDEX_DELIMITER:
         violations.append(Violation("docs/designs/INDEX.md", "Design index header must be followed immediately by the canonical delimiter"))
@@ -500,7 +498,6 @@ def change_violations(target: Path, designs: dict[str, DesignInfo]) -> list[Viol
         fields, header_errors, _ = canonical_header(
             path.read_text(encoding="utf-8"),
             relative,
-            allowed_fields={"Status", "Owner", "Design", "Design-Revision"},
         )
         violations.extend(header_errors)
 
