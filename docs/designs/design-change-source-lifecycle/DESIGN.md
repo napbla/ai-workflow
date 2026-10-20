@@ -1,6 +1,6 @@
 # Design → Change → Source Lifecycle
 
-Status: Accepted
+Status: Realized
 Owner: architect
 
 ## Goal
@@ -469,37 +469,3 @@ Vendor/runtime-specific capabilities may automate the loop:
 - consuming CI failures.
 
 Core protocol defines only the lifecycle contract. Claude/Codex-specific commands, hooks, polling, or hosted sessions remain operator/runtime guidance rather than protocol requirements.
-
-## Proposed Protocol Changes After Design Acceptance
-
-Implementation of this Design should update:
-
-- `WORKFLOW.md`
-  - introduce Design → Change → Source semantics;
-  - define Design PR and Change PR separately;
-  - define change identity and restart rules;
-  - enforce final-head review after all cleanup/folding.
-
-- `spec/templates/WORKFLOW.md`
-  - mirror those semantics.
-
-- `docs/WORK_TRACKING.md` and template
-  - add `docs/designs/` lifecycle;
-  - distinguish Design completion from Change completion;
-  - describe 1→N implementation maps.
-
-- `AGENTS.md` / role guidance if needed
-  - architect decomposes accepted Designs into Changes;
-  - implementer works from a Change, not directly from an unaccepted Design.
-
-- `HUMAN_SETUP.md`
-  - brand-new project flow starts with Design PR;
-  - human accepts design before implementation decomposition.
-
-- `spec/SPEC.md`
-  - add `docs/designs/` to project state and define it as target/planning truth.
-
-- initializer/templates/tests
-  - generate the required Design directory/guidance if protocol review concludes it is part of the repository contract.
-
-Because this adds a new canonical artifact class and branch lifecycle, implementation review should explicitly decide whether it is a protocol-v2 clarification or requires the next protocol version.
