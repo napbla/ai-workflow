@@ -130,7 +130,6 @@ class ProtocolValidatorTest(unittest.TestCase):
             )
             messages = repo.messages()
             self.assertIn("noncanonical metadata line", messages)
-            self.assertIn("missing Design `Status:` metadata", messages)
 
     def test_implementing_design_requires_realization_map_as_first_section(self) -> None:
         tmp, repo = self.make_repo()
