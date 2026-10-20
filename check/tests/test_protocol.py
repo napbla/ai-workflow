@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import contextlib
 import io
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
-
-import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -18,7 +17,7 @@ class RepoFixture:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.write(".ai-workflow.yml", "protocol: 3\n")
-        self.write("WORKFLOW.md", "# Test\n\nProtocol: `ai-workflow v3`\n")
+        self.write("WORKFLOW.md", "# Test\n\nProtocol: `ai-workflow v3`\n\n## Rules\n")
         self.write("AGENTS.md", "# Agents\n")
         self.write(".agents/implementer.md", "# Implementer\n")
         self.write("docs/WORK_TRACKING.md", "# Tracking\n")
@@ -47,7 +46,14 @@ class RepoFixture:
 def design_text(status: str, areas: list[tuple[str, str]] | None = None) -> str:
     lines = ["# Design", "", f"Status: {status}", "Owner: architect", ""]
     if areas is not None:
-        lines += ["## Realization Map", "", "Changes:", "- `example` — Realized", "", "Areas:"]
+        lines += [
+            "## Realization Map",
+            "",
+            "Changes:",
+            "- `example` — Realized",
+            "",
+            "Areas:",
+        ]
         lines += [f"- `{path}` — {state}" for path, state in areas]
         lines += ["", "Tests:", "", "Current-truth docs:", ""]
     lines += ["## Goal", "", "Example."]
@@ -68,46 +74,21 @@ class ProtocolValidatorTest(unittest.TestCase):
         tmp, repo = self.make_repo()
         with tmp:
             repo.write(".ai-workflow.yml", "protocol: 2\n")
-            repo.write("WORKFLOW.md", "# Test\n\nProtocol: `ai-workflow v2`\n")
+            repo.write("WORKFLOW.md", "# Test\n\nProtocol: `ai-workflow v2`\n\n## Rules\n")
             messages = repo.messages()
             self.assertIn("declares protocol 2; validator supports 3", messages)
             self.assertIn("declares protocol v2; expected v3", messages)
 
-    def test_design_metadata_stops_at_indented_level_two_heading(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write(
-                "docs/designs/example/DESIGN.md",
-                "# Design\n\nOwner: architect\n\n"
-                " ## Notes\n"
-                "Status: Implementing\n",
-            )
-            self.assertIn("missing Design `Status:` metadata", repo.messages())
-
-    def test_change_metadata_stops_at_indented_level_two_heading(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write("docs/designs/example/DESIGN.md", design_text("Accepted"))
-            repo.write(
-                "docs/changes/work/CHANGE.md",
-                "# Change\n\nStatus: In Progress\nOwner: implementer\n\n"
-                " ## Notes\n"
-                "Design: docs/designs/example/DESIGN.md\n"
-                "Design-Revision: 0123456789abcdef0123456789abcdef01234567\n",
-            )
-            self.assertEqual(repo.violations(), [])
-
-    def test_workflow_version_inside_fenced_example_does_not_count(self) -> None:
+    def test_workflow_body_example_cannot_supply_protocol_version(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
             repo.write(
                 "WORKFLOW.md",
                 "# Test\n\n"
-                "```md\n"
-                "Protocol: `ai-workflow v3`\n"
-                "```\n",
+                "## Example\n\n"
+                "Protocol: `ai-workflow v3`\n",
             )
-            self.assertIn("missing `Protocol: ai-workflow vN` declaration", repo.messages())
+            self.assertIn("top-of-file header must contain exactly one canonical", repo.messages())
 
     def test_required_path_and_role_file_are_checked(self) -> None:
         tmp, repo = self.make_repo()
@@ -135,243 +116,71 @@ class ProtocolValidatorTest(unittest.TestCase):
             )
             self.assertEqual(repo.violations(), [])
 
-    def test_realized_design_cannot_keep_target_mappings(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write("docs/designs/example/DESIGN.md", design_text("Realized", [("src/**", "Target")]))
-            self.assertIn("Realized Design still contains Target mappings", repo.messages())
-
-    def test_realized_design_detects_target_with_alternate_markdown_bullet(self) -> None:
+    def test_design_header_rejects_noncanonical_markdown_metadata(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
             repo.write(
                 "docs/designs/example/DESIGN.md",
-                "# Design\n\nStatus: Realized\nOwner: architect\n\n"
-                "## Realization Map\n\n"
-                "Changes:\n- example — Realized\n\n"
-                "Areas:\n* `src/**` — Target\n\n"
-                "Tests:\n\n"
-                "Current-truth docs:\n",
-            )
-            self.assertIn("Realized Design still contains Target mappings", repo.messages())
-
-    def test_implementing_design_requires_instance_level_map_not_fenced_example(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write(
-                "docs/designs/example/DESIGN.md",
-                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
-                "## Notes\n\n```md\n## Realization Map\nAreas:\n- `src/**` — Realized\n```\n",
-            )
-            self.assertIn("Implementing Design must have an instance-level Realization Map", repo.messages())
-
-    def test_invalid_fence_closer_does_not_expose_hidden_map(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write(
-                "docs/designs/example/DESIGN.md",
-                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
-                "```md\n"
-                "example\n"
-                "```not-a-closing-fence\n"
-                "## Realization Map\n"
-                "Changes:\n- example — Realized\n"
-                "Areas:\n- src/** — Realized\n"
-                "Tests:\n"
-                "Current-truth docs:\n"
-                "```\n",
-            )
-            self.assertIn("Implementing Design must have an instance-level Realization Map", repo.messages())
-
-    def test_backtick_in_backtick_fence_info_does_not_open_fence(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write("src/a.py", "")
-            repo.write(
-                "docs/designs/example/DESIGN.md",
-                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
-                "```bad`info\n"
-                "## Realization Map\n\n"
-                "Changes:\n- example — Realized\n\n"
-                "Areas:\n- src/a.py — Realized\n\n"
-                "Tests:\n\n"
-                "Current-truth docs:\n",
-            )
-            repo.write(
-                "docs/designs/INDEX.md",
-                "# Design Traceability Index\n\n"
-                "| Design | Design status | Realized source areas |\n"
-                "| --- | --- | --- |\n"
-                "| [example](example/DESIGN.md) | Implementing | `src/a.py` |\n",
-            )
-            self.assertEqual(repo.violations(), [])
-
-    def test_html_comment_marker_in_fence_info_does_not_open_comment(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write("src/a.py", "")
-            repo.write(
-                "docs/designs/example/DESIGN.md",
-                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
-                "```md <!-- literal\n"
-                "example\n"
+                "# Design\n\n"
+                "```text\n"
+                "Status: Implementing\n"
                 "```\n"
-                "## Realization Map\n\n"
-                "Changes:\n- example — Realized\n\n"
-                "Areas:\n- src/a.py — Realized\n\n"
-                "Tests:\n\n"
-                "Current-truth docs:\n",
-            )
-            repo.write(
-                "docs/designs/INDEX.md",
-                "# Design Traceability Index\n\n"
-                "| Design | Design status | Realized source areas |\n"
-                "| --- | --- | --- |\n"
-                "| [example](example/DESIGN.md) | Implementing | `src/a.py` |\n",
-            )
-            self.assertEqual(repo.violations(), [])
-
-    def test_html_commented_map_and_index_rows_are_ignored(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write(
-                "docs/designs/example/DESIGN.md",
-                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
-                "<!--\n"
-                "## Realization Map\n"
-                "Changes:\n- example — Realized\n"
-                "Areas:\n- src/** — Realized\n"
-                "Tests:\n"
-                "Current-truth docs:\n"
-                "-->\n",
-            )
-            repo.write(
-                "docs/designs/INDEX.md",
-                "# Design Traceability Index\n\n"
-                "| Design | Design status | Realized source areas |\n"
-                "| --- | --- | --- |\n"
-                "<!-- | [ghost](ghost/DESIGN.md) | Realized | `src/**` | -->\n",
+                "Owner: architect\n\n"
+                "## Realization Map\n",
             )
             messages = repo.messages()
-            self.assertIn("Implementing Design must have an instance-level Realization Map", messages)
-            self.assertNotIn("ghost/DESIGN.md", messages)
+            self.assertIn("noncanonical metadata line", messages)
+            self.assertIn("missing Design `Status:` metadata", messages)
 
-    def test_realization_map_heading_without_required_structure_is_rejected(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write(
-                "docs/designs/example/DESIGN.md",
-                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
-                "## Realization Map\n\n"
-                "This heading alone is not a structured map.\n",
-            )
-            messages = repo.messages()
-            self.assertIn("Realization Map is missing required sections", messages)
-            self.assertIn("Implementing Design must have an instance-level Realization Map", messages)
-
-    def test_realization_map_stops_at_indented_level_two_heading(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write(
-                "docs/designs/example/DESIGN.md",
-                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
-                "## Realization Map\n\n"
-                "Changes:\n- example — Realized\n\n"
-                " ## Notes\n"
-                "Areas:\n- src/a.py — Realized\n"
-                "Tests:\n"
-                "Current-truth docs:\n",
-            )
-            messages = repo.messages()
-            self.assertIn("Realization Map is missing required sections", messages)
-            self.assertIn("Implementing Design must have an instance-level Realization Map", messages)
-
-    def test_realization_map_accepts_documented_unbackticked_paths(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write("providers/contracts/provider.py", "")
-            repo.write(
-                "docs/designs/example/DESIGN.md",
-                "# Design\n\nStatus: Realized\nOwner: architect\n\n"
-                "## Realization Map\n\n"
-                "Changes:\n- provider-contract — Realized\n\n"
-                "Areas:\n- providers/contracts/** — Realized\n\n"
-                "Tests:\n\n"
-                "Current-truth docs:\n\n"
-                "## Goal\nExample.\n",
-            )
-            repo.write(
-                "docs/designs/INDEX.md",
-                "# Design Traceability Index\n\n"
-                "| Design | Design status | Realized source areas |\n"
-                "| --- | --- | --- |\n"
-                "| [example](example/DESIGN.md) | Realized | `providers/contracts/**` |\n",
-            )
-            self.assertEqual(repo.violations(), [])
-
-    def test_indented_code_block_does_not_count_as_realization_map(self) -> None:
+    def test_implementing_design_requires_realization_map_as_first_section(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
             repo.write(
                 "docs/designs/example/DESIGN.md",
                 "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
                 "## Notes\n\n"
-                "    ## Realization Map\n"
-                "    Changes:\n"
-                "    - example — Realized\n"
-                "    Areas:\n"
-                "    - src/** — Realized\n"
-                "    Tests:\n"
-                "    Current-truth docs:\n",
+                "## Realization Map\n\n"
+                "Changes:\nAreas:\nTests:\nCurrent-truth docs:\n",
             )
-            self.assertIn("Implementing Design must have an instance-level Realization Map", repo.messages())
+            self.assertIn("must use `## Realization Map` as its first canonical section", repo.messages())
 
-    def test_indented_html_comment_literal_does_not_hide_visible_map(self) -> None:
+    def test_realization_map_requires_exact_canonical_syntax(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
-            repo.write("src/a.py", "")
             repo.write(
                 "docs/designs/example/DESIGN.md",
                 "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
-                "    <!-- literal example\n"
                 "## Realization Map\n\n"
-                "Changes:\n- example — Realized\n\n"
-                "Areas:\n- src/a.py — Realized\n\n"
+                "Changes:\n"
+                "- `example` — Realized\n\n"
+                "Areas:\n"
+                "* `src/**` — Realized\n\n"
                 "Tests:\n\n"
                 "Current-truth docs:\n",
             )
-            repo.write(
-                "docs/designs/INDEX.md",
-                "# Design Traceability Index\n\n"
-                "| Design | Design status | Realized source areas |\n"
-                "| --- | --- | --- |\n"
-                "| [example](example/DESIGN.md) | Implementing | `src/a.py` |\n",
-            )
-            self.assertEqual(repo.violations(), [])
+            self.assertIn("noncanonical Areas entry", repo.messages())
 
-    def test_indented_html_comment_closer_closes_active_comment(self) -> None:
+    def test_html_or_comment_text_inside_protocol_map_is_just_invalid_syntax(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
-            repo.write("src/a.py", "")
             repo.write(
                 "docs/designs/example/DESIGN.md",
                 "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
-                "<!-- hidden text\n"
-                "    -->\n"
                 "## Realization Map\n\n"
-                "Changes:\n- example — Realized\n\n"
-                "Areas:\n- src/a.py — Realized\n\n"
+                "Changes:\n"
+                "- `example` — Realized\n\n"
+                "Areas:\n"
+                "<!-- hidden mapping -->\n"
                 "Tests:\n\n"
                 "Current-truth docs:\n",
             )
-            repo.write(
-                "docs/designs/INDEX.md",
-                "# Design Traceability Index\n\n"
-                "| Design | Design status | Realized source areas |\n"
-                "| --- | --- | --- |\n"
-                "| [example](example/DESIGN.md) | Implementing | `src/a.py` |\n",
-            )
-            self.assertEqual(repo.violations(), [])
+            self.assertIn("noncanonical Areas entry", repo.messages())
+
+    def test_realized_design_cannot_keep_target_mappings(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("docs/designs/example/DESIGN.md", design_text("Realized", [("src/**", "Target")]))
+            self.assertIn("Realized Design still contains Target mappings", repo.messages())
 
     def test_realized_mapping_must_exist_in_repository(self) -> None:
         tmp, repo = self.make_repo()
@@ -395,7 +204,7 @@ class ProtocolValidatorTest(unittest.TestCase):
             )
             repo.write(
                 "docs/designs/INDEX.md",
-                "# Index\n"
+                "# Design Traceability Index\n\n"
                 "| Design | Design status | Realized source areas |\n"
                 "| --- | --- | --- |\n"
                 "| [example](example/DESIGN.md) | Realized | `src/a.py`, `src/b.py` |\n",
@@ -404,8 +213,7 @@ class ProtocolValidatorTest(unittest.TestCase):
             self.assertIn("status is Implementing but index says Realized", messages)
             self.assertIn("extra: src/b.py", messages)
 
-
-    def test_malformed_index_data_row_is_rejected(self) -> None:
+    def test_index_rejects_equivalent_but_noncanonical_row_syntax(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
             repo.write(
@@ -415,9 +223,9 @@ class ProtocolValidatorTest(unittest.TestCase):
                 "| --- | --- | --- |\n"
                 "| ghost | Realized | `src/**` |\n",
             )
-            self.assertIn("invalid Design index row", repo.messages())
+            self.assertIn("noncanonical Design index row", repo.messages())
 
-    def test_index_rows_must_be_contiguous_with_table(self) -> None:
+    def test_index_rows_must_be_contiguous_with_header(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
             repo.write("src/a.py", "")
@@ -435,23 +243,6 @@ class ProtocolValidatorTest(unittest.TestCase):
             )
             self.assertIn("missing realized mapping row", repo.messages())
 
-    def test_index_areas_cell_must_be_entirely_well_formed(self) -> None:
-        tmp, repo = self.make_repo()
-        with tmp:
-            repo.write("src/a.py", "")
-            repo.write(
-                "docs/designs/example/DESIGN.md",
-                design_text("Implementing", [("src/a.py", "Realized")]),
-            )
-            repo.write(
-                "docs/designs/INDEX.md",
-                "# Design Traceability Index\n\n"
-                "| Design | Design status | Realized source areas |\n"
-                "| --- | --- | --- |\n"
-                "| [example](example/DESIGN.md) | Implementing | `src/a.py`, src/stale.py |\n",
-            )
-            self.assertIn("invalid realized source areas cell", repo.messages())
-
     def test_duplicate_realized_area_ownership_is_rejected(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -463,7 +254,7 @@ class ProtocolValidatorTest(unittest.TestCase):
                 )
             repo.write(
                 "docs/designs/INDEX.md",
-                "# Index\n"
+                "# Design Traceability Index\n\n"
                 "| Design | Design status | Realized source areas |\n"
                 "| --- | --- | --- |\n"
                 "| [one](one/DESIGN.md) | Implementing | `src/shared.py` |\n"
@@ -477,31 +268,37 @@ class ProtocolValidatorTest(unittest.TestCase):
             repo.write("docs/designs/example/DESIGN.md", design_text("Accepted"))
             repo.write(
                 "docs/changes/work/CHANGE.md",
-                "# Change\n\nStatus: In Progress\nOwner: implementer\n"
-                "Design: docs/designs/example/DESIGN.md\n\n## Goal\nWork.\n",
+                "# Change\n\n"
+                "Status: In Progress\n"
+                "Owner: implementer\n"
+                "Design: docs/designs/example/DESIGN.md\n\n"
+                "## Goal\nWork.\n",
             )
             self.assertIn("Design-derived Change is missing Design-Revision", repo.messages())
 
             repo.write(
                 "docs/changes/work/CHANGE.md",
-                "# Change\n\nStatus: In Progress\nOwner: implementer\n"
+                "# Change\n\n"
+                "Status: In Progress\n"
+                "Owner: implementer\n"
                 "Design: docs/designs/example/DESIGN.md\n"
                 "Design-Revision: 0123456789abcdef0123456789abcdef01234567\n\n"
                 "## Goal\nWork.\n",
             )
             self.assertEqual(repo.violations(), [])
 
-    def test_revision_without_design_is_rejected(self) -> None:
+    def test_change_body_cannot_supply_design_binding(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
+            repo.write("docs/designs/example/DESIGN.md", design_text("Accepted"))
             repo.write(
                 "docs/changes/work/CHANGE.md",
-                "# Change\n\nStatus: In Progress\nOwner: implementer\n"
-                "Design-Revision: 0123456789abcdef0123456789abcdef01234567\n\n"
-                "## Goal\nWork.\n",
+                "# Change\n\nStatus: In Progress\nOwner: implementer\n\n"
+                "## Notes\n"
+                "Design: docs/designs/example/DESIGN.md\n"
+                "Design-Revision: 0123456789abcdef0123456789abcdef01234567\n",
             )
-            self.assertIn("has Design-Revision but no Design field", repo.messages())
-
+            self.assertEqual(repo.violations(), [])
 
     def test_target_resolution_error_returns_exit_2(self) -> None:
         stderr = io.StringIO()
