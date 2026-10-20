@@ -107,6 +107,19 @@ Concrete code/tests/docs/config/migrations implement a Change. They have no sepa
 
 Every source change that affects mapped areas must update all affected Design maps and the traceability index before final review.
 
+## Canonical Machine-Readable Syntax
+
+Protocol-v3 structural fields use one exact repository grammar rather than general Markdown/CommonMark equivalence.
+
+- top metadata is column-zero `Key: value` before the first `## ` section;
+- an `Implementing` or `Realized` Design uses `## Realization Map` as its first level-two section;
+- Realization Map labels are exactly `Changes:`, `Areas:`, `Tests:`, `Current-truth docs:` in that order;
+- mapped paths use exact `- \`<path>\` — Target|Realized` syntax;
+- `docs/designs/INDEX.md` is a dedicated projection file with exactly one literal canonical table header occurrence in the entire file;
+- Markdown/HTML-equivalent alternate spellings are not alternate protocol syntax; noncanonical forms are invalid where machine-readable structure is expected.
+
+Tooling may reject noncanonical syntax even when a Markdown renderer would display it similarly. This keeps the repository format a small deterministic API.
+
 ## Design Traceability
 
 `docs/designs/INDEX.md` contains realized mappings only and is a disposable navigation projection.

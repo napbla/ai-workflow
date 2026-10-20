@@ -8,6 +8,7 @@ Owner: architect
 Changes:
 - `implement-design-lifecycle-v3` — Realized
 - `ci-required-checks` — Realized
+- `protocol-validator` — Realized
 
 Areas:
 - `WORKFLOW.md` — Realized
@@ -19,9 +20,11 @@ Areas:
 - `.agents/**` — Realized
 - `.ai-workflow.yml` — Realized
 - `.github/workflows/ci.yml` — Realized
+- `check/protocol.py` — Realized
 
 Tests:
 - `init/tests/test_init.py` — Realized
+- `check/tests/test_protocol.py` — Realized
 
 Current-truth docs:
 - `spec/SPEC.md` — Realized
@@ -29,9 +32,10 @@ Current-truth docs:
 - `HUMAN_SETUP.md` — Realized
 - `check/README.md` — Realized
 
+## Goal
+
 This Design is the current conceptual map for protocol-v3 Design/Change/source semantics. The implementation Change was derived from accepted Design revision `305121fb9b24bb31c753044a8262b0380882bc71`.
 
-## Goal
 
 Define three separate primitives in ai-workflow:
 
@@ -121,22 +125,22 @@ Example:
 ## Realization Map
 
 Changes:
-- provider-contract — merged
-- apple-provider — merged
-- google-play-provider — in progress
+- `provider-contract` — merged
+- `apple-provider` — merged
+- `google-play-provider` — in progress
 
 Areas:
-- providers/contracts/** — Realized
-- providers/apple/** — Realized
-- providers/google-play/** — Target
+- `providers/contracts/**` — Realized
+- `providers/apple/**` — Realized
+- `providers/google-play/**` — Target
 
 Tests:
-- tests/providers/contracts/** — Realized
-- tests/providers/apple/** — Realized
-- tests/providers/google-play/** — Target
+- `tests/providers/contracts/**` — Realized
+- `tests/providers/apple/**` — Realized
+- `tests/providers/google-play/**` — Target
 
 Current-truth docs:
-- docs/architecture/data-provider.md — Realized
+- `docs/architecture/data-provider.md` — Realized
 ```
 
 Per-area states are:
@@ -426,8 +430,8 @@ as a lightweight current lookup table of **realized mappings only**, for example
 ```md
 | Design | Design status | Realized source areas |
 | --- | --- | --- |
-| data-provider | Implementing | providers/contracts/**, providers/apple/** |
-| analytics-engine | Realized | analytics/** |
+| data-provider | Implementing | `providers/contracts/**`, `providers/apple/**` |
+| analytics-engine | Realized | `analytics/**` |
 ```
 
 Target-only areas do not appear in reverse lookup until they are realized.

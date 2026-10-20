@@ -10,7 +10,7 @@ The repository protocol is the shared contract. Core tools remain separate modul
 spec/       canonical protocol, roles, templates, version
 init/       bootstrap new repositories
 migrate/    semantic migration module (planned)
-check/      validation module (GitHub branch protection check; protocol validation planned)
+check/      deterministic protocol and GitHub protection validation
 ```
 
 Consumers such as dashboards or agent runners should live in separate repositories and consume the protocol rather than becoming part of core.
@@ -62,7 +62,15 @@ The initializer creates the v3 repository contract including `docs/designs/INDEX
 
 A brand-new project should create and accept its initial Design before implementation begins.
 
-## Test
+## Validate and Test
+
+Validate any protocol-v3 repository against the protocol shipped by this checkout:
+
+```bash
+python check/protocol.py --target /path/to/repository
+```
+
+Run core tests:
 
 ```bash
 python -m unittest discover -s init/tests

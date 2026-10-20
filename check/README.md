@@ -1,16 +1,64 @@
 # check
 
-Deterministic validation of a repository against the canonical protocol in `../spec/`.
+Deterministic validation against the canonical protocol in `../spec/`.
 
-Semantic project judgment belongs to agents or migration logic, not this module.
+Semantic product/design judgment belongs to agents or humans. The check module validates only properties that can be determined mechanically.
+
+## Protocol validator
+
+`protocol.py` validates a target repository against the protocol version shipped by the current ai-workflow checkout.
+
+```bash
+python check/protocol.py
+python check/protocol.py --target /path/to/repository
+```
+
+The default target is the current working directory.
+
+The validator intentionally understands **protocol grammar, not general Markdown**. Machine-readable fields have one canonical syntax. Equivalent CommonMark renderings, HTML comments, alternate bullets, indentation variants, or fenced examples are not alternate protocol spellings. In the dedicated `docs/designs/INDEX.md` projection file, the literal canonical table header must occur exactly once anywhere in the file, including inside prose or fenced examples.
+
+For protocol v3 it validates:
+
+- required protocol files/directories;
+- `.ai-workflow.yml` marker against `spec/VERSION`;
+- the top-of-file protocol version declared by `WORKFLOW.md`;
+- canonical Design/Change metadata;
+- Design status values;
+- `## Realization Map` as the first section of `Implementing` / `Realized` Designs;
+- exact Realization Map section order and entry syntax;
+- that `Realized` mappings match current repository paths;
+- that a `Realized` Design has no remaining `Target` mappings;
+- `docs/designs/INDEX.md` as the exact projection of realized source `Areas`;
+- duplicate exact realized source-area ownership across Designs;
+- Design-derived active Changes reference an existing Design and include a commit-like `Design-Revision`.
+
+Canonical mapped entries look like:
+
+```md
+Areas:
+- `providers/contracts/**` — Realized
+- `providers/google-play/**` — Target
+```
+
+This narrow grammar is deliberate: repository format is the API, so tooling does not need to become a Markdown/CommonMark renderer.
+
+Exit codes:
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Target satisfies all implemented deterministic checks |
+| `1` | Protocol violations found |
+| `2` | Validator could not read/validate the target (for example invalid target path or I/O failure) |
+
+The validator intentionally does **not** judge Design quality, verify that a Design revision was actually accepted/merged, prove Git commit reachability, infer semantic supersession, mutate the target, migrate older protocol versions, or normalize noncanonical Markdown.
 
 ## GitHub branch protection
 
 `branch_protection.py` answers one question: are `main` and `develop` protected on GitHub as the protocol requires? It only reads repository-host state through the GitHub REST API. It never changes settings and never inspects local commands. GitHub branch protection and rulesets are the enforcement boundary; this tool verifies them.
 
 ```bash
-GH_TOKEN=... python check/branch_protection.py               # repo derived from the `origin` remote
-python check/branch_protection.py --repo OWNER/NAME          # explicit repository
+GH_TOKEN=... python check/branch_protection.py
+python check/branch_protection.py --repo OWNER/NAME
 python check/branch_protection.py --api-url https://ghe.example/api/v3
 ```
 
@@ -19,24 +67,20 @@ Each branch counts as protected when active rulesets and/or classic branch prote
 - require a pull request;
 - block force pushes;
 - block deletion;
-- cannot be bypassed by the checking credential:
-  - A ruleset counts only when its `current_user_can_bypass` is `never` or `pull_requests_only`. A ruleset showing `always` or `exempt` is ignored. One that is unreadable or shows an unknown value makes the result unverifiable.
-  - Classic protection counts only with "Do not allow bypassing the above settings" (`enforce_admins`) enabled. Its PR requirement counts only when no user, team, or app is allowed to bypass required pull requests.
+- cannot be bypassed by the checking credential.
 
-Run the check with the same credential the agent runtime uses, so the bypass evaluation applies to that credential. The token is read from `GH_TOKEN` or `GITHUB_TOKEN`. It is never printed and must never be committed. A fine-grained token needs Administration read-only to read classic protection.
+Run the check with the same credential the agent runtime uses. The token is read from `GH_TOKEN` or `GITHUB_TOKEN`, is never printed, and must never be committed.
 
 | Exit | Meaning | Action |
 | --- | --- | --- |
 | `0` | Both branches protected for the checking credential | Continue normal autonomous execution |
 | `1` | At least one branch is missing or not fully protected | Human setup blocker: configure protection |
-| `2` | Protection could not be verified (no credential, insufficient permission, unknown bypass status, API failure, repository not found or not accessible) | Human setup blocker: fix access and re-run |
+| `2` | Protection could not be verified | Human setup blocker: fix access and re-run |
 
-On exit `1` or `2` the output names the missing requirements and the remediation steps. Agents record it under Human Attention in `docs/status/CURRENT.md` and must not claim the branches are protected.
+Limitations: bypass is evaluated only for the checking credential, repository-level push restrictions are not evaluated, and this checker does **not yet verify required status checks**. For the ai-workflow repository, GitHub protection separately requires the Actions check named `core-tests` on both `main` and `develop`.
 
-Limitations: bypass is evaluated only for the checking credential, repository-level push restrictions are not evaluated, and this checker does **not yet verify required status checks**. For the ai-workflow repository, GitHub protection must separately require the Actions check named `core-tests` on both `main` and `develop`. The tool reports only the protection properties it explicitly checks; it does not prevent local mistakes.
+## Tests
 
-Tests: `python -m unittest discover -s check/tests`.
-
-## Planned
-
-Protocol marker/version checks, required-path checks, and other machine-checkable structural invariants.
+```bash
+python -m unittest discover -s check/tests
+```

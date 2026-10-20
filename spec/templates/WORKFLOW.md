@@ -254,6 +254,39 @@ Mapped source/test/doc areas are labeled `Target` or `Realized`.
 
 Every source change that moves, replaces, removes, or materially changes a mapped area must update **all affected Design Realization Maps** and `docs/designs/INDEX.md` before final review, regardless of whether the source change came from that Design, another Design, a direct Change, or a small fix.
 
+### Canonical protocol syntax
+
+Machine-readable protocol structure uses one canonical Markdown subset. The validator checks this exact repository syntax; it does **not** interpret equivalent CommonMark/HTML renderings.
+
+For an `Implementing` or `Realized` Design, `## Realization Map` must be the first level-two section after the top metadata block and must use this shape:
+
+```md
+## Realization Map
+
+Changes:
+- `provider-contract` — Realized
+
+Areas:
+- `providers/contracts/**` — Realized
+- `providers/apple/**` — Target
+
+Tests:
+- `tests/providers/contracts/**` — Realized
+
+Current-truth docs:
+- `docs/architecture/data-provider.md` — Realized
+```
+
+Structural rules are intentionally narrow:
+
+- protocol metadata uses exact column-zero `Key: value` lines before the first `## ` section;
+- Realization Map labels appear exactly in the order shown above;
+- mapped Areas/Tests/current-truth docs use exact `- \`<path>\` — Target|Realized` entries;
+- `docs/designs/INDEX.md` is a dedicated projection file and must contain exactly one literal canonical table header occurrence in the entire file;
+- alternate bullets, indentation variants, HTML comments, fenced examples, or other Markdown-equivalent forms are not alternate protocol spellings; if placed where canonical machine-readable structure is expected, they are invalid.
+
+This keeps the repository format an explicit API instead of requiring tooling to implement a general Markdown renderer.
+
 ### Partial supersession
 
 A replacement Design does not supersede current realized mappings merely by becoming `Accepted` or `Implementing`.

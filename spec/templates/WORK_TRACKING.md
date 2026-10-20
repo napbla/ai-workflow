@@ -43,12 +43,12 @@ Default branch:
 design/<design-id>
 ```
 
-Recommended shape:
+Recommended shape while `Proposed` or `Accepted`:
 
 ```md
 # Design Title
 
-Status: Proposed | Accepted | Implementing | Realized
+Status: Proposed | Accepted
 Owner: architect
 
 ## Goal
@@ -58,8 +58,37 @@ Owner: architect
 ## Constraints
 
 ## Trade-offs / Rationale
+```
+
+Once implementation starts, switch to `Status: Implementing` and make `## Realization Map` the **first level-two section** after metadata:
+
+```md
+# Design Title
+
+Status: Implementing | Realized
+Owner: architect
 
 ## Realization Map
+
+Changes:
+- `change-id` — in progress
+
+Areas:
+- `src/**` — Target
+
+Tests:
+- `tests/**` — Target
+
+Current-truth docs:
+- `docs/architecture/example.md` — Target
+
+## Goal
+
+## Target Behavior / Architecture
+
+## Constraints
+
+## Trade-offs / Rationale
 ```
 
 While `Proposed`, intent/architecture/scope may evolve freely.
