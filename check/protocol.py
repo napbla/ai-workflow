@@ -171,12 +171,25 @@ def safe_relative_path(value: str) -> bool:
     return not path.is_absolute() and ".." not in path.parts and value not in {"", "."}
 
 
+def resolves_within(root: Path, candidate: Path) -> bool:
+    try:
+        candidate.resolve().relative_to(root.resolve())
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def mapping_exists(target: Path, pattern: str) -> bool:
     if not safe_relative_path(pattern):
         return False
+
+    root = target.resolve()
     if any(char in pattern for char in "*?["):
-        return any(target.glob(pattern))
-    return (target / pattern).exists()
+        matches = list(target.glob(pattern))
+        return bool(matches) and all(resolves_within(root, match) for match in matches)
+
+    candidate = target / pattern
+    return candidate.exists() and resolves_within(root, candidate)
 
 
 def required_state_violations(target: Path) -> list[Violation]:
