@@ -12,7 +12,7 @@ Release protocol v3 as stable and use it to bootstrap the first consumer project
 
 ## Active Changes
 
-- None.
+- `protocol-validator` — rejecting dangling symlinks from Realized glob mappings.
 
 ## Human Attention
 
