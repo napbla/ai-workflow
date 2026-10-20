@@ -7,6 +7,7 @@ Owner: architect
 
 Changes:
 - `implement-design-lifecycle-v3` — Realized
+- `ci-required-checks` — Realized
 
 Areas:
 - `WORKFLOW.md` — Realized
