@@ -251,6 +251,7 @@ def parse_realization_map(
     entries: dict[str, list[tuple[str, str]]] = {name: [] for name in MAPPED_SECTIONS}
     expected_label_index = 0
     current: str | None = None
+    canonical_structure = True
 
     for raw_line in section:
         if raw_line == "":
@@ -262,6 +263,7 @@ def parse_realization_map(
                 violations.append(
                     Violation(design_path, f"noncanonical Realization Map section order: expected {expected}, found {raw_line}")
                 )
+                canonical_structure = False
             else:
                 expected_label_index += 1
             current = raw_line
@@ -269,6 +271,7 @@ def parse_realization_map(
 
         if current is None:
             violations.append(Violation(design_path, f"unexpected Realization Map line before Changes: {raw_line}"))
+            canonical_structure = False
             continue
 
         if current == "Changes:":
@@ -279,6 +282,7 @@ def parse_realization_map(
                         "noncanonical Changes entry; use: - `<change-id>` — <state>",
                     )
                 )
+                canonical_structure = False
             continue
 
         if current in MAPPED_SECTIONS:
@@ -290,6 +294,7 @@ def parse_realization_map(
                         f"noncanonical {current[:-1]} entry; use: - `<path>` — Target|Realized",
                     )
                 )
+                canonical_structure = False
                 continue
 
             mapped_path, state = match.groups()
@@ -306,13 +311,14 @@ def parse_realization_map(
             continue
 
         violations.append(Violation(design_path, f"unexpected Realization Map line: {raw_line}"))
+        canonical_structure = False
 
     if expected_label_index != len(MAP_LABELS):
         missing = ", ".join(MAP_LABELS[expected_label_index:])
         violations.append(Violation(design_path, f"Realization Map is missing canonical sections: {missing}"))
-        return entries, violations, False
+        canonical_structure = False
 
-    return entries, violations, not violations
+    return entries, violations, canonical_structure
 
 
 def design_violations(target: Path) -> tuple[dict[str, DesignInfo], list[Violation]]:
