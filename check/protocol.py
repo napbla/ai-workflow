@@ -294,6 +294,16 @@ def parse_realization_map(
                 continue
 
             mapped_path, state = match.groups()
+            if any(existing_path == mapped_path for existing_path, _ in entries[current]):
+                violations.append(
+                    Violation(
+                        design_path,
+                        f"duplicate {current[:-1]} mapping for path: {mapped_path}",
+                    )
+                )
+                canonical_structure = False
+                continue
+
             entries[current].append((mapped_path, state))
 
             if not safe_relative_path(mapped_path):
