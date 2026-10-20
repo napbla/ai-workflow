@@ -17,6 +17,7 @@ Areas:
 - `HUMAN_SETUP.md` — Realized
 - `.agents/**` — Realized
 - `.ai-workflow.yml` — Realized
+- `.github/workflows/ci.yml` — Realized
 
 Tests:
 - `init/tests/test_init.py` — Realized
@@ -24,6 +25,8 @@ Tests:
 Current-truth docs:
 - `spec/SPEC.md` — Realized
 - `README.md` — Realized
+- `HUMAN_SETUP.md` — Realized
+- `check/README.md` — Realized
 
 This Design is the current conceptual map for protocol-v3 Design/Change/source semantics. The implementation Change was derived from accepted Design revision `305121fb9b24bb31c753044a8262b0380882bc71`.
 
