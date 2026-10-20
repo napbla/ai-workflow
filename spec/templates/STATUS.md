@@ -6,6 +6,10 @@ Updated: $updated_date
 
 Not set.
 
+## Designs
+
+- None yet. Brand-new projects should create and accept an initial Design before implementation.
+
 ## Active Changes
 
 - None.
@@ -20,11 +24,13 @@ Not set.
 
 ## Next
 
-- Define the current objective or first active change.
+- Create the initial Design PR or define the current objective.
 
 ## Current Truth References
 
 - Specs: `docs/specs/`
 - Architecture: `docs/architecture/`
+- Design traceability: `docs/designs/INDEX.md`
+- Designs: `docs/designs/`
 - Active changes: `docs/changes/`
-- Durable decisions: `docs/adr/`
+- Cross-cutting decisions: `docs/adr/`
