@@ -15,7 +15,7 @@ python check/protocol.py --target /path/to/repository
 
 The default target is the current working directory.
 
-The validator intentionally understands **protocol grammar, not general Markdown**. Machine-readable fields have one canonical syntax. Equivalent CommonMark renderings, HTML comments, alternate bullets, indentation variants, or fenced examples do not count as protocol state.
+The validator intentionally understands **protocol grammar, not general Markdown**. Machine-readable fields have one canonical syntax. Equivalent CommonMark renderings, HTML comments, alternate bullets, indentation variants, or fenced examples are not alternate protocol spellings. In the dedicated `docs/designs/INDEX.md` projection file, the literal canonical table header must occur exactly once anywhere in the file, including inside prose or fenced examples.
 
 For protocol v3 it validates:
 
