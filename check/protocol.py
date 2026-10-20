@@ -103,11 +103,22 @@ def _strip_html_comments(line: str, in_comment: bool) -> tuple[str, bool]:
         in_comment = True
 
 
+def _fence_opening(line: str) -> tuple[str, int] | None:
+    match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+    if not match:
+        return None
+    marker, info = match.groups()
+    if marker[0] == "`" and "`" in info:
+        return None
+    return marker[0], len(marker)
+
+
 def unfenced_lines(text: str) -> list[str]:
     """Return structurally visible Markdown lines.
 
-    Fenced code, indented code, and HTML comments are blanked so examples or
-    hidden content cannot satisfy repository protocol structure.
+    This is intentionally a small structural scanner, not a full Markdown
+    renderer. It only distinguishes constructs that could otherwise masquerade
+    as protocol metadata, headings, maps, or index rows.
     """
     result: list[str] = []
     in_fence = False
@@ -127,28 +138,27 @@ def unfenced_lines(text: str) -> list[str]:
             result.append("")
             continue
 
-        # Markdown indented code is code before HTML parsing. Do not let a
-        # literal indented <!-- start a comment that hides later structure.
+        if in_comment:
+            _, in_comment = _strip_html_comments(raw_line, True)
+            result.append("")
+            continue
+
+        # Indented code is classified before starting new HTML comments.
         if raw_line.startswith("    ") or raw_line.startswith("\t"):
             result.append("")
             continue
 
-        line, in_comment = _strip_html_comments(raw_line, in_comment)
-        if in_comment and not line:
+        # Fences are recognized before HTML comment parsing because comment
+        # markers inside a valid fence info string are literal info text.
+        opening = _fence_opening(raw_line)
+        if opening is not None:
+            fence_char, fence_len = opening
+            in_fence = True
             result.append("")
             continue
 
-        opening = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
-        if opening:
-            marker, info = opening.groups()
-            # CommonMark forbids backticks in an info string for a backtick
-            # fence. Tilde-fence info strings do not have that restriction.
-            if marker[0] == "`" and "`" in info:
-                result.append(line)
-                continue
-            in_fence = True
-            fence_char = marker[0]
-            fence_len = len(marker)
+        line, in_comment = _strip_html_comments(raw_line, False)
+        if in_comment and not line:
             result.append("")
             continue
 
@@ -159,8 +169,9 @@ def unfenced_lines(text: str) -> list[str]:
 def metadata_text(text: str) -> str:
     lines = unfenced_lines(text)
     head: list[str] = []
+    level_two_re = re.compile(r"^ {0,3}##(?:[ \t]+|$)")
     for line in lines:
-        if line.startswith("## "):
+        if level_two_re.match(line):
             break
         head.append(line)
     return "\n".join(head)
@@ -362,18 +373,20 @@ def parse_index(target: Path) -> tuple[dict[str, IndexRow], list[Violation]]:
         violations.append(Violation("docs/designs/INDEX.md", "missing Design index table header"))
         return rows, violations
 
-    for line in lines[header_index + 1 :]:
+    table_lines = lines[header_index + 1 :]
+    if not table_lines:
+        violations.append(Violation("docs/designs/INDEX.md", "Design index table is missing delimiter row"))
+        return rows, violations
+
+    delimiter = table_lines[0].strip()
+    if not re.match(r"^\|\s*:?-+\s*\|\s*:?-+\s*\|\s*:?-+\s*\|$", delimiter):
+        violations.append(Violation("docs/designs/INDEX.md", "Design index table has invalid or detached delimiter row"))
+        return rows, violations
+
+    for line in table_lines[1:]:
         stripped = line.strip()
-        if not stripped:
-            if rows:
-                break
-            continue
-        if not stripped.startswith("|"):
-            if rows:
-                break
-            continue
-        if re.match(r"^\|\s*:?-+", stripped):
-            continue
+        if not stripped or not stripped.startswith("|"):
+            break
 
         match = INDEX_ROW_RE.match(stripped)
         if not match:
