@@ -151,6 +151,23 @@ class ProtocolValidatorTest(unittest.TestCase):
             )
             self.assertEqual(repo.violations(), [])
 
+    def test_indented_code_block_does_not_count_as_realization_map(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
+                "## Notes\n\n"
+                "    ## Realization Map\n"
+                "    Changes:\n"
+                "    - example — Realized\n"
+                "    Areas:\n"
+                "    - src/** — Realized\n"
+                "    Tests:\n"
+                "    Current-truth docs:\n",
+            )
+            self.assertIn("Implementing Design must have an instance-level Realization Map", repo.messages())
+
     def test_realized_mapping_must_exist_in_repository(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -194,6 +211,23 @@ class ProtocolValidatorTest(unittest.TestCase):
                 "| ghost | Realized | `src/**` |\n",
             )
             self.assertIn("invalid Design index row", repo.messages())
+
+    def test_index_areas_cell_must_be_entirely_well_formed(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("src/a.py", "")
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                design_text("Implementing", [("src/a.py", "Realized")]),
+            )
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "| [example](example/DESIGN.md) | Implementing | `src/a.py`, src/stale.py |\n",
+            )
+            self.assertIn("invalid realized source areas cell", repo.messages())
 
     def test_duplicate_realized_area_ownership_is_rejected(self) -> None:
         tmp, repo = self.make_repo()
