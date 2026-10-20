@@ -202,6 +202,23 @@ class ProtocolValidatorTest(unittest.TestCase):
             repo.write("docs/designs/example/DESIGN.md", design_text("Realized", [("src/**", "Target")]))
             self.assertIn("Realized Design still contains Target mappings", repo.messages())
 
+    def test_realization_map_rejects_duplicate_path_state_entries(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("src/a.py", "")
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
+                "## Realization Map\n\n"
+                "Changes:\n- `example` — Realized\n\n"
+                "Areas:\n"
+                "- `src/a.py` — Target\n"
+                "- `src/a.py` — Realized\n\n"
+                "Tests:\n\n"
+                "Current-truth docs:\n",
+            )
+            self.assertIn("duplicate Areas mapping for path: src/a.py", repo.messages())
+
     def test_realized_mapping_must_exist_in_repository(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -274,6 +291,21 @@ class ProtocolValidatorTest(unittest.TestCase):
                 "## Duplicate\n\n"
                 "| Design | Design status | Realized source areas |\n"
                 "| --- | --- | --- |\n",
+            )
+            self.assertIn("must contain exactly one canonical Design index table", repo.messages())
+
+    def test_index_rejects_repeated_header_inside_fenced_example(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n\n"
+                "```md\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "```\n",
             )
             self.assertIn("must contain exactly one canonical Design index table", repo.messages())
 
