@@ -4,7 +4,7 @@ Updated: 2026-10-20
 
 ## Current Objective
 
-Finish internal consistency of the protocol-v3 canonical validator, then release v3 as stable and bootstrap the first consumer project.
+Release protocol v3 as stable and use it to bootstrap the first consumer project.
 
 ## Designs
 
@@ -12,7 +12,7 @@ Finish internal consistency of the protocol-v3 canonical validator, then release
 
 ## Active Changes
 
-- `protocol-validator` — reconciling canonical grammar with generated guidance and final review findings.
+- None.
 
 ## Human Attention
 
@@ -21,13 +21,14 @@ Finish internal consistency of the protocol-v3 canonical validator, then release
 ## Blockers / Risks
 
 - Semantic migration tooling for existing v1/v2 projects remains planned but does not block new v3 projects.
+- `check/branch_protection.py` still does not verify required status checks; ai-workflow's GitHub ruleset currently enforces `core-tests` separately.
 
 ## Next
 
-- Pass required `core-tests` on the consistency fixes.
-- Final-fold and obtain latest-head Codex review.
 - Release protocol v3 from `develop` to `main`.
-- Bootstrap the first consumer project with stable v3.
+- Bootstrap the first consumer project with the stable v3 initializer.
+- Create and accept that project's initial Design before implementation begins.
+- Build migration tooling later for existing v1/v2 repositories.
 
 ## Current Truth References
 
@@ -39,3 +40,4 @@ Finish internal consistency of the protocol-v3 canonical validator, then release
 - Active changes: `docs/changes/`
 - Protocol validator: `check/protocol.py`
 - CI workflow: `.github/workflows/ci.yml`
+- Branch protection checker: `check/branch_protection.py`
