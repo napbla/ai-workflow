@@ -38,7 +38,7 @@ DESIGN_STATUS_RE = re.compile(r"(?m)^Status:\s*(\w+)\s*$")
 DESIGN_FIELD_RE = re.compile(r"(?m)^Design:\s*(\S+)\s*$")
 REVISION_FIELD_RE = re.compile(r"(?m)^Design-Revision:\s*(\S+)\s*$")
 REVISION_RE = re.compile(r"^[0-9a-fA-F]{7,64}$")
-MAP_ENTRY_RE = re.compile(r"^- (.+?)\s+—\s+(Target|Realized)\s*$")
+MAP_ENTRY_RE = re.compile(r"^[-*+]\s+(.+?)\s+—\s+(Target|Realized)\s*$")
 INDEX_ROW_RE = re.compile(
     r"^\|\s*\[([^\]]+)\]\(([^)]+/DESIGN\.md)\)\s*\|\s*(\w+)\s*\|\s*(.*?)\s*\|\s*$"
 )
@@ -81,35 +81,71 @@ def shipped_version() -> str:
     return VERSION_PATH.read_text(encoding="utf-8").strip()
 
 
+def _strip_html_comments(line: str, in_comment: bool) -> tuple[str, bool]:
+    """Remove HTML comments while preserving visible text outside them."""
+    visible: list[str] = []
+    rest = line
+    while True:
+        if in_comment:
+            end = rest.find("-->")
+            if end < 0:
+                return "".join(visible), True
+            rest = rest[end + 3 :]
+            in_comment = False
+
+        start = rest.find("<!--")
+        if start < 0:
+            visible.append(rest)
+            return "".join(visible), False
+
+        visible.append(rest[:start])
+        rest = rest[start + 4 :]
+        in_comment = True
+
+
 def unfenced_lines(text: str) -> list[str]:
-    """Return markdown lines with fenced-code contents blanked out."""
+    """Return structurally visible Markdown lines.
+
+    Fenced code, indented code, and HTML comments are blanked so examples or
+    hidden content cannot satisfy repository protocol structure.
+    """
     result: list[str] = []
     in_fence = False
     fence_char = ""
     fence_len = 0
+    in_comment = False
 
-    for line in text.splitlines():
-        stripped = line.lstrip()
-        match = re.match(r"(`{3,}|~{3,})", stripped)
-        if match:
-            marker = match.group(1)
-            char = marker[0]
-            if not in_fence:
-                in_fence = True
-                fence_char = char
-                fence_len = len(marker)
-            elif char == fence_char and len(marker) >= fence_len:
-                in_fence = False
-                fence_char = ""
-                fence_len = 0
+    for raw_line in text.splitlines():
+        if in_fence:
+            close = re.match(r"^ {0,3}(`{3,}|~{3,})[ \t]*$", raw_line)
+            if close:
+                marker = close.group(1)
+                if marker[0] == fence_char and len(marker) >= fence_len:
+                    in_fence = False
+                    fence_char = ""
+                    fence_len = 0
             result.append("")
             continue
-        if in_fence:
+
+        line, in_comment = _strip_html_comments(raw_line, in_comment)
+        if in_comment and not line:
             result.append("")
-        elif line.startswith("    ") or line.startswith("\t"):
+            continue
+
+        if line.startswith("    ") or line.startswith("\t"):
             result.append("")
-        else:
-            result.append(line)
+            continue
+
+        opening = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if opening:
+            marker = opening.group(1)
+            in_fence = True
+            fence_char = marker[0]
+            fence_len = len(marker)
+            result.append("")
+            continue
+
+        result.append(line)
     return result
 
 
@@ -184,7 +220,8 @@ def version_violations(target: Path, expected: str) -> list[Violation]:
     workflow = target / "WORKFLOW.md"
     if workflow.is_file():
         text = workflow.read_text(encoding="utf-8")
-        match = WORKFLOW_VERSION_RE.search(text)
+        visible = "\n".join(unfenced_lines(text))
+        match = WORKFLOW_VERSION_RE.search(visible)
         if not match:
             violations.append(Violation("WORKFLOW.md", "missing `Protocol: ai-workflow vN` declaration"))
         elif match.group(1) != expected:
@@ -217,7 +254,7 @@ def parse_realization_map(
             continue
         if current not in MAP_SECTIONS:
             continue
-        if not line.startswith("- "):
+        if not re.match(r"^[-*+]\s+", line):
             continue
 
         match = MAP_ENTRY_RE.match(line)
