@@ -33,7 +33,7 @@ Run the check with the same credential the agent runtime uses, so the bypass eva
 
 On exit `1` or `2` the output names the missing requirements and the remediation steps. Agents record it under Human Attention in `docs/status/CURRENT.md` and must not claim the branches are protected.
 
-Limitations: bypass is evaluated only for the checking credential, and repository-level push restrictions are not evaluated. The tool reports what GitHub says; it does not prevent local mistakes.
+Limitations: bypass is evaluated only for the checking credential, repository-level push restrictions are not evaluated, and this checker does **not yet verify required status checks**. For the ai-workflow repository, GitHub protection must separately require the Actions check named `core-tests` on both `main` and `develop`. The tool reports only the protection properties it explicitly checks; it does not prevent local mistakes.
 
 Tests: `python -m unittest discover -s check/tests`.
 
