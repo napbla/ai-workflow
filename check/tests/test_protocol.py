@@ -131,6 +131,27 @@ class ProtocolValidatorTest(unittest.TestCase):
             messages = repo.messages()
             self.assertIn("noncanonical metadata line", messages)
 
+    def test_canonical_metadata_allows_additional_fields(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\n"
+                "Status: Accepted\n"
+                "Owner: architect\n"
+                "Reviewer: alice\n\n"
+                "## Goal\nExample.\n",
+            )
+            repo.write(
+                "docs/changes/work/CHANGE.md",
+                "# Change\n\n"
+                "Status: In Progress\n"
+                "Owner: implementer\n"
+                "Reviewer: bob\n\n"
+                "## Goal\nWork.\n",
+            )
+            self.assertEqual(repo.violations(), [])
+
     def test_implementing_design_requires_realization_map_as_first_section(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -242,6 +263,20 @@ class ProtocolValidatorTest(unittest.TestCase):
             )
             self.assertIn("missing realized mapping row", repo.messages())
 
+    def test_index_rejects_multiple_canonical_projection_tables(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n\n"
+                "## Duplicate\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n",
+            )
+            self.assertIn("must contain exactly one canonical Design index table", repo.messages())
+
     def test_duplicate_realized_area_ownership_is_rejected(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -298,6 +333,18 @@ class ProtocolValidatorTest(unittest.TestCase):
                 "Design-Revision: 0123456789abcdef0123456789abcdef01234567\n",
             )
             self.assertEqual(repo.violations(), [])
+
+
+    def test_work_tracking_guidance_is_generated_and_map_first(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+        current = (repo_root / "docs" / "WORK_TRACKING.md").read_text(encoding="utf-8")
+        template = (repo_root / "spec" / "templates" / "WORK_TRACKING.md").read_text(encoding="utf-8")
+        self.assertEqual(current, template)
+
+        marker = "Once implementation starts, switch to `Status: Implementing`"
+        start = current.index(marker)
+        implementing_shape = current[start:current.index("While `Proposed`", start)]
+        self.assertLess(implementing_shape.index("## Realization Map"), implementing_shape.index("## Goal"))
 
     def test_target_resolution_error_returns_exit_2(self) -> None:
         stderr = io.StringIO()
