@@ -73,6 +73,30 @@ class ProtocolValidatorTest(unittest.TestCase):
             self.assertIn("declares protocol 2; validator supports 3", messages)
             self.assertIn("declares protocol v2; expected v3", messages)
 
+    def test_design_metadata_stops_at_indented_level_two_heading(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nOwner: architect\n\n"
+                " ## Notes\n"
+                "Status: Implementing\n",
+            )
+            self.assertIn("missing Design `Status:` metadata", repo.messages())
+
+    def test_change_metadata_stops_at_indented_level_two_heading(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("docs/designs/example/DESIGN.md", design_text("Accepted"))
+            repo.write(
+                "docs/changes/work/CHANGE.md",
+                "# Change\n\nStatus: In Progress\nOwner: implementer\n\n"
+                " ## Notes\n"
+                "Design: docs/designs/example/DESIGN.md\n"
+                "Design-Revision: 0123456789abcdef0123456789abcdef01234567\n",
+            )
+            self.assertEqual(repo.violations(), [])
+
     def test_workflow_version_inside_fenced_example_does_not_count(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -167,6 +191,31 @@ class ProtocolValidatorTest(unittest.TestCase):
                 "docs/designs/example/DESIGN.md",
                 "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
                 "```bad`info\n"
+                "## Realization Map\n\n"
+                "Changes:\n- example — Realized\n\n"
+                "Areas:\n- src/a.py — Realized\n\n"
+                "Tests:\n\n"
+                "Current-truth docs:\n",
+            )
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "| [example](example/DESIGN.md) | Implementing | `src/a.py` |\n",
+            )
+            self.assertEqual(repo.violations(), [])
+
+    def test_html_comment_marker_in_fence_info_does_not_open_comment(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("src/a.py", "")
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
+                "```md <!-- literal\n"
+                "example\n"
+                "```\n"
                 "## Realization Map\n\n"
                 "Changes:\n- example — Realized\n\n"
                 "Areas:\n- src/a.py — Realized\n\n"
@@ -300,6 +349,30 @@ class ProtocolValidatorTest(unittest.TestCase):
             )
             self.assertEqual(repo.violations(), [])
 
+    def test_indented_html_comment_closer_closes_active_comment(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("src/a.py", "")
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
+                "<!-- hidden text\n"
+                "    -->\n"
+                "## Realization Map\n\n"
+                "Changes:\n- example — Realized\n\n"
+                "Areas:\n- src/a.py — Realized\n\n"
+                "Tests:\n\n"
+                "Current-truth docs:\n",
+            )
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "| [example](example/DESIGN.md) | Implementing | `src/a.py` |\n",
+            )
+            self.assertEqual(repo.violations(), [])
+
     def test_realized_mapping_must_exist_in_repository(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -343,6 +416,24 @@ class ProtocolValidatorTest(unittest.TestCase):
                 "| ghost | Realized | `src/**` |\n",
             )
             self.assertIn("invalid Design index row", repo.messages())
+
+    def test_index_rows_must_be_contiguous_with_table(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write("src/a.py", "")
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                design_text("Implementing", [("src/a.py", "Realized")]),
+            )
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "detached prose\n"
+                "| [example](example/DESIGN.md) | Implementing | `src/a.py` |\n",
+            )
+            self.assertIn("missing realized mapping row", repo.messages())
 
     def test_index_areas_cell_must_be_entirely_well_formed(self) -> None:
         tmp, repo = self.make_repo()
