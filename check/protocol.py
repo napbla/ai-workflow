@@ -186,7 +186,10 @@ def mapping_exists(target: Path, pattern: str) -> bool:
     root = target.resolve()
     if any(char in pattern for char in "*?["):
         matches = list(target.glob(pattern))
-        return bool(matches) and all(resolves_within(root, match) for match in matches)
+        return bool(matches) and all(
+            match.exists() and resolves_within(root, match)
+            for match in matches
+        )
 
     candidate = target / pattern
     return candidate.exists() and resolves_within(root, candidate)
