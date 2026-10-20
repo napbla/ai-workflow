@@ -12,7 +12,7 @@ Release protocol v3 as stable and use it to bootstrap the first consumer project
 
 ## Active Changes
 
-- `protocol-validator` — closing final canonical identity/projection invariants from review.
+- None.
 
 ## Human Attention
 
