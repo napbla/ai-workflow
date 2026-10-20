@@ -8,6 +8,7 @@ Owner: architect
 Changes:
 - `implement-design-lifecycle-v3` — Realized
 - `ci-required-checks` — Realized
+- `protocol-validator` — Realized
 
 Areas:
 - `WORKFLOW.md` — Realized
@@ -19,9 +20,11 @@ Areas:
 - `.agents/**` — Realized
 - `.ai-workflow.yml` — Realized
 - `.github/workflows/ci.yml` — Realized
+- `check/protocol.py` — Realized
 
 Tests:
 - `init/tests/test_init.py` — Realized
+- `check/tests/test_protocol.py` — Realized
 
 Current-truth docs:
 - `spec/SPEC.md` — Realized
