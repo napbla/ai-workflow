@@ -246,6 +246,45 @@ class ProtocolValidatorTest(unittest.TestCase):
             self.assertIn("Realized mapping does not match current repository state: src/missing.py", messages)
             self.assertIn("missing realized mapping row", messages)
 
+    def test_realized_mapping_cannot_escape_repository_through_symlink(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            outside = Path(outside_tmp)
+            (outside / "secret.txt").write_text("secret", encoding="utf-8")
+            try:
+                (repo.root / "src").symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                design_text("Implementing", [("src/secret.txt", "Realized")]),
+            )
+            self.assertIn(
+                "Realized mapping does not match current repository state: src/secret.txt",
+                repo.messages(),
+            )
+
+    def test_realized_glob_rejects_match_that_escapes_repository_through_symlink(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            outside = Path(outside_tmp)
+            (outside / "secret.txt").write_text("secret", encoding="utf-8")
+            (repo.root / "src").mkdir(parents=True, exist_ok=True)
+            try:
+                (repo.root / "src" / "outside.txt").symlink_to(outside / "secret.txt")
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                design_text("Implementing", [("src/*", "Realized")]),
+            )
+            self.assertIn(
+                "Realized mapping does not match current repository state: src/*",
+                repo.messages(),
+            )
+
     def test_index_must_exactly_project_realized_areas_and_status(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
