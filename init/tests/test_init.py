@@ -60,14 +60,35 @@ class GeneratedProjectTest(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in (target / ".agents").iterdir()), ["architect.md", "implementer.md", "reviewer.md"])
             self.assertIn("**Role ID:** `implementer`", (target / ".agents" / "implementer.md").read_text(encoding="utf-8"))
             self.assertIn("- **Reviewer** — `reviewer` (`.agents/reviewer.md`)", (target / "AGENTS.md").read_text(encoding="utf-8"))
+
             workflow = (target / "WORKFLOW.md").read_text(encoding="utf-8")
             self.assertIn(f"Protocol: `ai-workflow v{version}`", workflow)
-            self.assertIn("## Branch Model", workflow)
+            self.assertIn("## Core Lifecycle: Design → Change → Source", workflow)
+            self.assertIn("design/<design-id>", workflow)
+            self.assertIn("Design-Revision:", workflow)
             self.assertIn("### Merge-safe status", workflow)
+
             for path in target.rglob("*.md"):
                 text = path.read_text(encoding="utf-8")
                 for vendor in ("ChatGPT", "Claude", "Codex"):
                     self.assertNotIn(vendor, text, f"{vendor} in {path}")
+
+    def test_v3_design_registry_is_initialized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            result = self.generate(target, "proj\n\n")
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            index = target / "docs" / "designs" / "INDEX.md"
+            self.assertTrue(index.is_file())
+            index_text = index.read_text(encoding="utf-8")
+            self.assertIn("# Design Traceability Index", index_text)
+            self.assertIn("realized Design mappings only", index_text)
+            self.assertNotIn("Target-only", "\n".join(line for line in index_text.splitlines() if line.startswith("| ")))
+
+            status = (target / "docs" / "status" / "CURRENT.md").read_text(encoding="utf-8")
+            self.assertIn("## Designs", status)
+            self.assertIn("docs/designs/INDEX.md", status)
 
     def test_selected_roles_and_unknown_role_retry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -83,7 +104,10 @@ class GeneratedProjectTest(unittest.TestCase):
             roles.write_text("roles:\n  123:\n    name: Numeric\n", encoding="utf-8")
             result = subprocess.run(
                 [sys.executable, str(INIT_SCRIPT), "--target", str(Path(tmp) / "proj"), "--roles", str(roles)],
-                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             self.assertEqual(result.returncode, 2)
             self.assertIn("Invalid role IDs", result.stderr)
