@@ -73,6 +73,18 @@ class ProtocolValidatorTest(unittest.TestCase):
             self.assertIn("declares protocol 2; validator supports 3", messages)
             self.assertIn("declares protocol v2; expected v3", messages)
 
+    def test_workflow_version_inside_fenced_example_does_not_count(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "WORKFLOW.md",
+                "# Test\n\n"
+                "```md\n"
+                "Protocol: `ai-workflow v3`\n"
+                "```\n",
+            )
+            self.assertIn("missing `Protocol: ai-workflow vN` declaration", repo.messages())
+
     def test_required_path_and_role_file_are_checked(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -105,6 +117,20 @@ class ProtocolValidatorTest(unittest.TestCase):
             repo.write("docs/designs/example/DESIGN.md", design_text("Realized", [("src/**", "Target")]))
             self.assertIn("Realized Design still contains Target mappings", repo.messages())
 
+    def test_realized_design_detects_target_with_alternate_markdown_bullet(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Realized\nOwner: architect\n\n"
+                "## Realization Map\n\n"
+                "Changes:\n- example — Realized\n\n"
+                "Areas:\n* `src/**` — Target\n\n"
+                "Tests:\n\n"
+                "Current-truth docs:\n",
+            )
+            self.assertIn("Realized Design still contains Target mappings", repo.messages())
+
     def test_implementing_design_requires_instance_level_map_not_fenced_example(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
@@ -114,6 +140,49 @@ class ProtocolValidatorTest(unittest.TestCase):
                 "## Notes\n\n```md\n## Realization Map\nAreas:\n- `src/**` — Realized\n```\n",
             )
             self.assertIn("Implementing Design must have an instance-level Realization Map", repo.messages())
+
+    def test_invalid_fence_closer_does_not_expose_hidden_map(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
+                "```md\n"
+                "example\n"
+                "```not-a-closing-fence\n"
+                "## Realization Map\n"
+                "Changes:\n- example — Realized\n"
+                "Areas:\n- src/** — Realized\n"
+                "Tests:\n"
+                "Current-truth docs:\n"
+                "```\n",
+            )
+            self.assertIn("Implementing Design must have an instance-level Realization Map", repo.messages())
+
+    def test_html_commented_map_and_index_rows_are_ignored(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                "# Design\n\nStatus: Implementing\nOwner: architect\n\n"
+                "<!--\n"
+                "## Realization Map\n"
+                "Changes:\n- example — Realized\n"
+                "Areas:\n- src/** — Realized\n"
+                "Tests:\n"
+                "Current-truth docs:\n"
+                "-->\n",
+            )
+            repo.write(
+                "docs/designs/INDEX.md",
+                "# Design Traceability Index\n\n"
+                "| Design | Design status | Realized source areas |\n"
+                "| --- | --- | --- |\n"
+                "<!-- | [ghost](ghost/DESIGN.md) | Realized | `src/**` | -->\n",
+            )
+            messages = repo.messages()
+            self.assertIn("Implementing Design must have an instance-level Realization Map", messages)
+            self.assertNotIn("ghost/DESIGN.md", messages)
 
     def test_realization_map_heading_without_required_structure_is_rejected(self) -> None:
         tmp, repo = self.make_repo()
