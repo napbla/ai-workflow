@@ -285,6 +285,24 @@ class ProtocolValidatorTest(unittest.TestCase):
                 repo.messages(),
             )
 
+    def test_realized_glob_rejects_dangling_symlink_match(self) -> None:
+        tmp, repo = self.make_repo()
+        with tmp:
+            (repo.root / "src").mkdir(parents=True, exist_ok=True)
+            try:
+                (repo.root / "src" / "dead").symlink_to(repo.root / "src" / "missing")
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+
+            repo.write(
+                "docs/designs/example/DESIGN.md",
+                design_text("Implementing", [("src/*", "Realized")]),
+            )
+            self.assertIn(
+                "Realized mapping does not match current repository state: src/*",
+                repo.messages(),
+            )
+
     def test_index_must_exactly_project_realized_areas_and_status(self) -> None:
         tmp, repo = self.make_repo()
         with tmp:
