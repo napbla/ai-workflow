@@ -248,6 +248,7 @@ def parse_realization_map(
     expected_label_index = 0
     current: str | None = None
     canonical_structure = True
+    change_ids: set[str] = set()
 
     for raw_line in section:
         if raw_line == "":
@@ -271,7 +272,8 @@ def parse_realization_map(
             continue
 
         if current == "Changes:":
-            if not MAP_CHANGE_RE.match(raw_line):
+            match = MAP_CHANGE_RE.match(raw_line)
+            if not match:
                 violations.append(
                     Violation(
                         design_path,
@@ -279,6 +281,16 @@ def parse_realization_map(
                     )
                 )
                 canonical_structure = False
+                continue
+
+            change_id, _ = match.groups()
+            if change_id in change_ids:
+                violations.append(
+                    Violation(design_path, f"duplicate Changes entry for change-id: {change_id}")
+                )
+                canonical_structure = False
+                continue
+            change_ids.add(change_id)
             continue
 
         if current in MAPPED_SECTIONS:
@@ -408,7 +420,16 @@ def parse_index(target: Path) -> tuple[dict[str, IndexRow], list[Violation]]:
             violations.append(Violation("docs/designs/INDEX.md", f"noncanonical Design index row: {line}"))
             continue
 
-        _, link, status, areas_cell = match.groups()
+        label, link, status, areas_cell = match.groups()
+        design_id = Path(link).parent.name
+        if label != design_id:
+            violations.append(
+                Violation(
+                    "docs/designs/INDEX.md",
+                    f"Design index label {label!r} does not match linked Design ID {design_id!r}",
+                )
+            )
+            continue
         if not INDEX_AREAS_RE.match(areas_cell):
             violations.append(
                 Violation(
@@ -419,7 +440,16 @@ def parse_index(target: Path) -> tuple[dict[str, IndexRow], list[Violation]]:
             continue
 
         design_path = (Path("docs/designs") / link).as_posix()
-        areas = frozenset(BACKTICK_VALUE_RE.findall(areas_cell))
+        area_values = BACKTICK_VALUE_RE.findall(areas_cell)
+        if len(area_values) != len(set(area_values)):
+            violations.append(
+                Violation(
+                    "docs/designs/INDEX.md",
+                    f"duplicate realized source area in row for {design_path}",
+                )
+            )
+            continue
+        areas = frozenset(area_values)
         if design_path in rows:
             violations.append(Violation("docs/designs/INDEX.md", f"duplicate row for {design_path}"))
             continue
