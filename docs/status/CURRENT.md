@@ -4,7 +4,7 @@ Updated: 2026-10-20
 
 ## Current Objective
 
-Stabilize protocol v3 with enforced exact-head CI, then add deterministic protocol validation before starting a consumer project.
+Add deterministic protocol validation so protocol v3 can be safely released and used by the first consumer project.
 
 ## Designs
 
@@ -12,7 +12,7 @@ Stabilize protocol v3 with enforced exact-head CI, then add deterministic protoc
 
 ## Active Changes
 
-- None.
+- `protocol-validator` — implementing generic deterministic v3 repository validation in `check/`.
 
 ## Human Attention
 
@@ -20,14 +20,15 @@ Stabilize protocol v3 with enforced exact-head CI, then add deterministic protoc
 
 ## Blockers / Risks
 
-- `check/branch_protection.py` verifies PR/force-push/deletion protection but does not yet verify required status checks.
+- Protocol validation intentionally covers structural/machine-checkable invariants only; semantic Design quality and acceptance authority remain outside deterministic validation.
 - Semantic migration tooling for existing v1/v2 projects remains planned.
 
 ## Next
 
-- Add deterministic protocol validation in `check/`.
-- Release protocol v3 from `develop` to `main` after validation is integrated.
-- Start the first consumer project with the stable v3 initializer and initial Design PR.
+- Verify the protocol validator and its tests in required `core-tests`.
+- Final-fold the validator Change and obtain latest-head Codex review.
+- Release protocol v3 from `develop` to `main`.
+- Bootstrap the first consumer project from stable v3.
 
 ## Current Truth References
 
@@ -36,6 +37,6 @@ Stabilize protocol v3 with enforced exact-head CI, then add deterministic protoc
 - Design traceability: `docs/designs/INDEX.md`
 - Designs: `docs/designs/`
 - Active changes: `docs/changes/`
+- Protocol validator: `check/protocol.py`
 - CI workflow: `.github/workflows/ci.yml`
 - Branch protection checker: `check/branch_protection.py`
-- Cross-cutting decisions: `docs/adr/`
