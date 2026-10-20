@@ -9,9 +9,10 @@ This workflow is designed for **one human operator working with multiple AI agen
 3. Commit the generated v3 repository state on `main`.
 4. Create `develop` from `main` and push it.
 5. Protect `main` and `develop`: require PRs, block force pushes and deletion, and do not give agent credentials bypass permission.
-6. With the agent runtime token in `GH_TOKEN` or `GITHUB_TOKEN`, run `python <ai-workflow>/check/branch_protection.py`. Any non-zero result is a setup blocker.
-7. Connect repository access to the AI runtimes you use.
-8. Treat the repository as canonical project state.
+6. For the ai-workflow repository, require the GitHub Actions check named `core-tests` on both `main` and `develop`. Consumer projects should require their own equivalent CI checks once those checks exist.
+7. With the agent runtime token in `GH_TOKEN` or `GITHUB_TOKEN`, run `python <ai-workflow>/check/branch_protection.py`. Any non-zero result is a setup blocker. This script verifies PR/force-push/deletion protection; it does not yet verify required status checks.
+8. Connect repository access to the AI runtimes you use.
+9. Treat the repository as canonical project state.
 
 ### Runtime credentials
 
