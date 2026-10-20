@@ -38,13 +38,15 @@ DESIGN_STATUS_RE = re.compile(r"(?m)^Status:\s*(\w+)\s*$")
 DESIGN_FIELD_RE = re.compile(r"(?m)^Design:\s*(\S+)\s*$")
 REVISION_FIELD_RE = re.compile(r"(?m)^Design-Revision:\s*(\S+)\s*$")
 REVISION_RE = re.compile(r"^[0-9a-fA-F]{7,64}$")
-MAP_ENTRY_RE = re.compile(r"^- `([^`]+)`\s+—\s+(Target|Realized)\s*$")
+MAP_ENTRY_RE = re.compile(r"^- (.+?)\s+—\s+(Target|Realized)\s*$")
 INDEX_ROW_RE = re.compile(
     r"^\|\s*\[([^\]]+)\]\(([^)]+/DESIGN\.md)\)\s*\|\s*(\w+)\s*\|\s*(.*?)\s*\|\s*$"
 )
 BACKTICK_VALUE_RE = re.compile(r"`([^`]+)`")
 
 MAP_SECTIONS = ("Areas:", "Tests:", "Current-truth docs:")
+REQUIRED_MAP_LABELS = ("Changes:", *MAP_SECTIONS)
+INDEX_HEADER = "| Design | Design status | Realized source areas |"
 
 
 @dataclass(frozen=True)
@@ -197,13 +199,15 @@ def parse_realization_map(
 
     entries: dict[str, list[tuple[str, str]]] = {name: [] for name in MAP_SECTIONS}
     current: str | None = None
+    labels_seen: set[str] = set()
 
     for raw_line in section:
         line = raw_line.strip()
         if not line:
             continue
-        if line in {"Changes:", *MAP_SECTIONS}:
+        if line in REQUIRED_MAP_LABELS:
             current = line
+            labels_seen.add(line)
             continue
         if current not in MAP_SECTIONS:
             continue
@@ -217,6 +221,9 @@ def parse_realization_map(
             )
             continue
         mapped_path, state = match.groups()
+        mapped_path = mapped_path.strip()
+        if mapped_path.startswith("`") and mapped_path.endswith("`") and len(mapped_path) >= 2:
+            mapped_path = mapped_path[1:-1].strip()
         entries[current].append((mapped_path, state))
 
         if not safe_relative_path(mapped_path):
@@ -228,7 +235,15 @@ def parse_realization_map(
                 Violation(design_path, f"Realized mapping does not match current repository state: {mapped_path}")
             )
 
-    return entries, violations, True
+    missing_labels = [label for label in REQUIRED_MAP_LABELS if label not in labels_seen]
+    if missing_labels:
+        violations.append(
+            Violation(
+                design_path,
+                "Realization Map is missing required sections: " + ", ".join(missing_labels),
+            )
+        )
+    return entries, violations, not missing_labels
 
 
 def design_violations(target: Path) -> tuple[dict[str, DesignInfo], list[Violation]]:
@@ -283,10 +298,30 @@ def parse_index(target: Path) -> tuple[dict[str, IndexRow], list[Violation]]:
     if not index_path.is_file():
         return rows, violations
 
-    for line in unfenced_lines(index_path.read_text(encoding="utf-8")):
+    lines = unfenced_lines(index_path.read_text(encoding="utf-8"))
+    header_index: int | None = None
+    for index, line in enumerate(lines):
+        if line.strip() == INDEX_HEADER:
+            header_index = index
+            break
+
+    if header_index is None:
+        violations.append(Violation("docs/designs/INDEX.md", "missing Design index table header"))
+        return rows, violations
+
+    for line in lines[header_index + 1 :]:
         stripped = line.strip()
-        if not stripped.startswith("| ["):
+        if not stripped:
+            if rows:
+                break
             continue
+        if not stripped.startswith("|"):
+            if rows:
+                break
+            continue
+        if re.match(r"^\|\s*:?-+", stripped):
+            continue
+
         match = INDEX_ROW_RE.match(stripped)
         if not match:
             violations.append(Violation("docs/designs/INDEX.md", f"invalid Design index row: {stripped}"))
@@ -399,7 +434,6 @@ def change_violations(target: Path, designs: dict[str, DesignInfo]) -> list[Viol
 
 
 def validate(target: Path, expected_version: str) -> list[Violation]:
-    target = target.resolve()
     violations = required_state_violations(target)
     violations.extend(version_violations(target, expected_version))
 
@@ -431,12 +465,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    target = args.target.resolve()
-    if not target.is_dir():
-        print(f"Target is not a directory: {target}", file=sys.stderr)
-        return 2
 
     try:
+        target = args.target.resolve()
+        if not target.is_dir():
+            print(f"Target is not a directory: {target}", file=sys.stderr)
+            return 2
         expected = shipped_version()
         violations = validate(target, expected)
     except (OSError, UnicodeError) as exc:
