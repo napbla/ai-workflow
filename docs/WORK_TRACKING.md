@@ -4,9 +4,9 @@ This file defines when project state must be written to the repository.
 
 ## Principle
 
-Use the minimum artifact needed for another human or agent to continue the project without the current conversation.
+Use the minimum artifact needed for another human or agent to continue without the current conversation.
 
-The repository is canonical. External issue trackers are not required.
+The repository is canonical. Git preserves history; active artifacts should describe current target/coordination state rather than historical narration.
 
 ## Decision Test
 
@@ -15,26 +15,92 @@ Ask:
 > Will another human or agent need this after the current conversation, coding session, branch, or review disappears?
 
 - **No** → keep it temporary.
-- **Yes** → materialize it in the repository.
+- **Yes** → materialize it in the appropriate repository surface.
 
 ## 1. Exploration
 
 Brainstorming, discarded ideas, and unresolved discussion may stay in Chat.
 
-Create repository state only when discussion produces:
+Materialize repository state when discussion produces:
 
-- committed work
-- a durable requirement or constraint
+- an accepted/proposed target Design needing review
+- committed implementation work
+- a durable requirement/constraint
+- a cross-session blocker/open question
 - a decision future agents must understand
-- a blocker or open question that must survive the session
 
-Do not preserve conversation for its own sake.
+## 2. Designs
 
-## 2. Active Changes
+Use `docs/designs/<design-id>/DESIGN.md` when target state itself needs durable review or guidance.
 
-Use `docs/changes/<change-id>/CHANGE.md` for non-trivial committed work that needs cross-session or cross-agent coordination.
+A brand-new project must have an initial Design before implementation.
 
-The active change lives on its feature branch (`feature/<change-id>` by default), never directly on `main`.
+Use a Design for consequential existing-project work when product intent, architecture, contracts, constraints, or trade-offs need human review. Small/local changes may skip a separate Design when target state is obvious.
+
+Default branch:
+
+```text
+design/<design-id>
+```
+
+Recommended shape:
+
+```md
+# Design Title
+
+Status: Proposed | Accepted | Implementing | Realized
+Owner: architect
+
+## Goal
+
+## Target Behavior / Architecture
+
+## Constraints
+
+## Trade-offs / Rationale
+
+## Realization Map
+```
+
+While `Proposed`, intent/architecture/scope may evolve freely.
+
+Before final acceptance, fold review outcomes into canonical sections and remove review-provenance/transient summary sections. Human acceptance is bound to the exact final Design PR head.
+
+### Realization Map
+
+Once implementation starts, track:
+
+- derived Changes
+- source areas
+- tests
+- current-truth docs
+
+Each mapped area is:
+
+- `Target` — accepted target, not evidence of implementation
+- `Realized` — currently implemented and explained by this Design
+
+A Design can be `Implementing` overall while some areas are already `Realized`.
+
+## 3. Design Traceability Index
+
+Maintain `docs/designs/INDEX.md` as a lightweight reverse-lookup projection of **realized mappings only**.
+
+It is navigation, not canonical implementation truth and not history.
+
+If the index disagrees with a Design's Realization Map, the Design file wins and the index must be corrected.
+
+Whenever any source change moves/replaces/removes/materially changes a mapped area, update all affected Design maps and index entries before final review — even if the source change came from a different Design, direct Change, or small fix.
+
+## 4. Active Changes
+
+Use `docs/changes/<change-id>/CHANGE.md` for non-trivial committed implementation work needing cross-session/cross-agent coordination.
+
+Default branch:
+
+```text
+feature/<change-id>
+```
 
 Recommended shape:
 
@@ -42,7 +108,10 @@ Recommended shape:
 # Change Title
 
 Status: Planned | In Progress | Blocked | Verifying
-Owner: <human-or-role-id>
+Owner: <role-id>
+
+Design: docs/designs/<design-id>/DESIGN.md
+Design-Revision: <accepted-design-commit-sha>
 
 ## Goal
 
@@ -53,89 +122,102 @@ Owner: <human-or-role-id>
 - [ ] ...
 
 ## Notes
-
-Only durable context, blockers, or decisions needed to continue the change.
 ```
 
-Use checklist state as progress evidence. Do not invent percentage completion.
+The Design fields are required when the Change derives from an accepted Design; direct Changes may omit them.
 
-Add `DESIGN.md` only when design complexity justifies a separate artifact.
+Change identity is:
 
-## 3. Small Fixes
+> accepted intent + acceptance criteria + explicit non-negotiable constraints
 
-A small local fix does not need a change artifact when all are true:
+Implementation plan is not identity.
+
+If a Design revision changes, the architect revalidates every incomplete Change mapped to it. A continuing Change must update `Design-Revision` to the newly accepted revision before work resumes.
+
+## 5. Small Fixes
+
+A small local fix may omit a Change artifact when:
 
 - scope is obvious
 - risk is low
 - one session/agent can complete it
-- no durable coordination context is needed
+- no persistent coordination context is needed
 
-The code, regression test, commit, and PR may be sufficient evidence.
+Code/tests/commit/PR may be enough, but affected current truth and Design realization mappings still must be updated.
 
-## 4. Bugs During Active Work
+## 6. Feedback and Implementation Pivots
 
-If a bug belongs to an active change:
+PR comments/reviews are coordination surfaces.
 
-1. fix it within the same change/branch when practical
-2. add or update a regression test when appropriate
-3. update `CHANGE.md` only if scope, acceptance criteria, blockers, or durable assumptions changed
-4. update current specs if the expected behavior was previously wrong or missing
+Feedback stays in the same Change when accepted Change identity remains unchanged.
 
-Do not create a separate bug artifact merely for bookkeeping.
+Examples:
 
-## 5. Bugs After Merge
+- library A → library B
+- webhook → polling
+- API permission forces another mechanism
+- internal module boundaries change without changing accepted behavior/constraints
 
-Treat a post-merge bug according to coordination need:
+Restart the Change when accepted intent, acceptance criteria, or explicit non-negotiable constraints materially change.
 
-- tiny, local, low-risk bug → direct fix + regression test may be enough
-- non-trivial bug or multi-session work → create a new active change
-- bug exposing incorrect current behavior documentation → update the relevant spec
-- bug exposing a durable architectural mistake/decision → update architecture and use an ADR only when future rationale matters
+If feedback changes the accepted target Design, revise and accept the Design first, then revalidate/rebind or replace affected Changes.
 
-## 6. Scope Discovered During Implementation
+Do not copy every review comment into durable docs.
 
-Do not silently expand active work when the new scope is materially independent.
+## 7. ADRs
 
-Choose one:
+Default decision rationale belongs in the relevant Design.
 
-- add it to the current change if it is required to satisfy the same goal
-- create a separate active change if it can be delivered independently
-- escalate when prioritization or trade-offs require human judgment
+Create/update an ADR only when rationale:
 
-## 7. Review Feedback
+- cuts across multiple Designs
+- must live independently of one Design
+- remains important after a Design is superseded
 
-PR comments and reviews are coordination surfaces.
+Do not use ADRs as a changelog.
 
-Before merge, ensure any durable outcome is reflected in one or more of:
+## 8. Partial Supersession
 
-- code
-- tests
-- current spec
-- current architecture
-- ADR
-- active change acceptance criteria/notes
+An accepted/implementing replacement Design does not supersede current realized mapping by itself.
 
-Do not copy every review comment into documentation.
+When replacement source for one area becomes real, update atomically in the same final reviewed head:
 
-Feedback that preserves the accepted intent stays in the same change and PR. Feedback that materially changes intent, acceptance criteria, architecture, or scope starts a new change instead (see Autonomous Change Execution in `WORKFLOW.md`).
+1. implement replacement source
+2. mark replacement Design area `Realized`
+3. remove/update/split that area from the old Design's realized map
+4. switch `docs/designs/INDEX.md`
 
-## 8. Completing a Change
+This keeps reverse lookup truthful throughout multi-Change replacement.
 
-Before merge/close:
+## 9. Completing a Change
+
+Before final review/merge:
 
 1. verify acceptance criteria
-2. fold durable knowledge into the most appropriate current-truth surface: code, tests, module docs, `docs/specs/`, or `docs/architecture/`
-3. create/update ADR only if durable rationale is worth preserving
-4. ensure tests capture important behavioral regressions
-5. make `docs/status/CURRENT.md` merge-safe: true on the target branch after the merge, and still true after the next `develop` → `main` merge, with no PR readiness, pending review, or pending release state (see Project Status in `WORKFLOW.md`)
-6. remove `docs/changes/<change-id>/` from the working tree
+2. fold durable truth into code/tests/module docs/specs/architecture
+3. update every affected Design Realization Map
+4. update `docs/designs/INDEX.md`
+5. set Design status appropriately (`Implementing` or `Realized`)
+6. update cross-cutting ADR only if needed
+7. make `docs/status/CURRENT.md` merge-safe
+8. remove `docs/changes/<change-id>/`
+9. push final head
+10. run independent review/CI on that exact final head
 
-Do not duplicate behavior in `docs/specs/` when code, tests, or module docs already state it clearly.
+Any later push makes the clean verdict stale.
 
-Git preserves merged code and durable documentation history. The active `CHANGE.md` itself is not required to survive completion; this remains valid even when a squash merge removes its intermediate branch history. Do not move it to an archive directory.
+## 10. Design Retention
 
-## 9. Current-State Rule
+A `Realized` Design remains while it is useful as a current conceptual map of implemented code.
 
-A new agent should not need completed change files to understand the system.
+Remove it only when fully superseded or no longer useful. Before removal, move still-relevant knowledge into replacement Design/current architecture/spec/module docs.
 
-If deleting an active change would remove knowledge required to operate or modify the current system, that knowledge belongs in current specs, architecture, ADRs, code, or tests first.
+Do not archive it separately; Git preserves history.
+
+## 11. Current-State Rule
+
+A replacement agent should not need completed Change files or old chats.
+
+If removing `CHANGE.md` would remove knowledge needed to operate/modify the system, fold that knowledge first.
+
+A realized Design may remain because it is current conceptual/traceability state, not historical bookkeeping.
