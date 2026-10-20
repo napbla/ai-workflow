@@ -12,7 +12,7 @@ Release protocol v3 as stable and use it to bootstrap the first consumer project
 
 ## Active Changes
 
-- None.
+- `protocol-validator` — ensuring realized mappings cannot escape repository root through symlinks.
 
 ## Human Attention
 
