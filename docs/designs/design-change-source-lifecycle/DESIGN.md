@@ -1,7 +1,31 @@
 # Design → Change → Source Lifecycle
 
-Status: Accepted
+Status: Realized
 Owner: architect
+
+## Realization Map
+
+Changes:
+- `implement-design-lifecycle-v3` — Realized
+
+Areas:
+- `WORKFLOW.md` — Realized
+- `docs/WORK_TRACKING.md` — Realized
+- `docs/designs/INDEX.md` — Realized
+- `spec/**` — Realized
+- `init/**` — Realized
+- `HUMAN_SETUP.md` — Realized
+- `.agents/**` — Realized
+- `.ai-workflow.yml` — Realized
+
+Tests:
+- `init/tests/test_init.py` — Realized
+
+Current-truth docs:
+- `spec/SPEC.md` — Realized
+- `README.md` — Realized
+
+This Design is the current conceptual map for protocol-v3 Design/Change/source semantics. The implementation Change was derived from accepted Design revision `305121fb9b24bb31c753044a8262b0380882bc71`.
 
 ## Goal
 
@@ -469,37 +493,3 @@ Vendor/runtime-specific capabilities may automate the loop:
 - consuming CI failures.
 
 Core protocol defines only the lifecycle contract. Claude/Codex-specific commands, hooks, polling, or hosted sessions remain operator/runtime guidance rather than protocol requirements.
-
-## Proposed Protocol Changes After Design Acceptance
-
-Implementation of this Design should update:
-
-- `WORKFLOW.md`
-  - introduce Design → Change → Source semantics;
-  - define Design PR and Change PR separately;
-  - define change identity and restart rules;
-  - enforce final-head review after all cleanup/folding.
-
-- `spec/templates/WORKFLOW.md`
-  - mirror those semantics.
-
-- `docs/WORK_TRACKING.md` and template
-  - add `docs/designs/` lifecycle;
-  - distinguish Design completion from Change completion;
-  - describe 1→N implementation maps.
-
-- `AGENTS.md` / role guidance if needed
-  - architect decomposes accepted Designs into Changes;
-  - implementer works from a Change, not directly from an unaccepted Design.
-
-- `HUMAN_SETUP.md`
-  - brand-new project flow starts with Design PR;
-  - human accepts design before implementation decomposition.
-
-- `spec/SPEC.md`
-  - add `docs/designs/` to project state and define it as target/planning truth.
-
-- initializer/templates/tests
-  - generate the required Design directory/guidance if protocol review concludes it is part of the repository contract.
-
-Because this adds a new canonical artifact class and branch lifecycle, implementation review should explicitly decide whether it is a protocol-v2 clarification or requires the next protocol version.

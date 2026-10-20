@@ -1,6 +1,6 @@
 # ai-workflow — AI-Native Project Workflow
 
-Protocol: `ai-workflow v2`
+Protocol: `ai-workflow v3`
 
 This repository is the transferable shared state for one human operator working with multiple AI agents.
 
@@ -11,49 +11,167 @@ The project should remain operable by:
 - one human operator coordinating multiple AI agents
 - a replacement human who has not seen prior conversations
 - progressively more autonomous agents as capabilities improve
-- bounded projects with zero human intervention when authority and reliability eventually permit it
+- bounded projects with zero human intervention when authority and reliability permit it
 
-Human involvement is required by **risk, uncertainty, and authority**, not by ceremony.
+Human involvement is driven by **risk, uncertainty, and authority**, not ceremony.
 
 ## Source of Truth
 
-The Git repository is the source of truth.
+The Git repository is the canonical transferable project state.
 
-Canonical state is branch-sensitive (see Branch Model): `main` holds stable truth, `develop` holds reviewed integration truth, and a feature branch holds the state of its active change.
+Canonical state is branch-sensitive:
 
-Conversation history, PR comments, CI messages, and external tools are coordination surfaces. They are not canonical project state.
+- `main` — stable/releasable current truth
+- `develop` — reviewed integration truth
+- `design/<design-id>` — a proposed target Design under human review
+- `feature/<change-id>` — one active implementation Change
 
-## Modularity and Tool Boundaries
-
-Keep tools small and composable. Each tool should do one job well and exchange project state through repository conventions rather than private integration state.
-
-The repository format is the protocol between tools and agents. A dashboard, initializer, validator, runner, or future agent system may read or update the same repository state without requiring tight coupling to another tool's implementation.
-
-Do not introduce a second canonical datastore merely for convenience. Tool-specific caches or indexes must be disposable projections of repository state.
+Conversation history, PR comments, CI messages, and external tools are coordination surfaces. They are not durable project truth.
 
 ## State Model
 
-- `docs/specs/` — current product/system behavior
-- `docs/architecture/` — current technical design and contracts
-- `docs/adr/` — durable rationale for important decisions future agents must understand
-- `docs/changes/` — active work only
-- `docs/status/CURRENT.md` — current operator-facing project snapshot
-- code and tests — executable current truth
+The repository intentionally separates three kinds of state.
+
+### Current implemented truth
+
+- source code
+- tests
+- module documentation
+- `docs/specs/`
+- `docs/architecture/`
+
+These answer:
+
+> What is implemented now?
+
+### Design registry
+
+- `docs/designs/<design-id>/DESIGN.md`
+- `docs/designs/INDEX.md`
+
+A Design describes target/conceptual structure. Its aggregate status is:
+
+- `Proposed` — under design review
+- `Accepted` — target accepted, implementation not started
+- `Implementing` — one or more required Changes remain incomplete
+- `Realized` — all required mapped areas are realized
+
+Realization is tracked **per mapped area**:
+
+- `Target` — accepted target scope, not evidence that behavior exists
+- `Realized` — mapped source/test/doc currently implements that part of the Design
+
+Only per-area `Realized` entries are evidence that a Design currently explains an area.
+
+`docs/designs/INDEX.md` is a disposable navigation projection of current realized mappings. It is not a second source of truth. If it disagrees with a Design's Realization Map, the Design file wins and the index must be fixed.
+
+### Active transformation state
+
+- `docs/changes/<change-id>/CHANGE.md`
+
+A Change describes one coherent transformation of current truth. Completed Change artifacts are removed after folding.
+
+### Other durable state
+
+- `docs/adr/` — rare cross-cutting rationale that must live independently of one Design
+- `docs/status/CURRENT.md` — merge-safe operator-facing current snapshot
 - Git history — historical record
 
-Do not maintain a separate archive of completed changes. When active work is complete, fold durable knowledge into the most appropriate current-truth surface — code, tests, module docs, specs, architecture docs, or ADRs — and remove the active change artifact. Behavior already captured clearly in code, tests, or module docs does not need to be duplicated in `docs/specs/`. Git preserves the history.
+Do not maintain archive folders for completed Changes or superseded Designs merely to preserve history. Git is the history.
+
+## Core Lifecycle: Design → Change → Source
+
+```text
+current system
+      ↓
+DESIGN
+what should the system become?
+      ↓
+one or more CHANGES
+what coherent transformations get us there?
+      ↓
+SOURCE CHANGES
+code + tests + current-truth docs
+      ↓
+implemented system
+```
+
+Design, Change, and source diff are separate primitives.
+
+### Design
+
+A Design answers:
+
+> What target state do we want, and why?
+
+Every brand-new project starts with a human-reviewable Design before implementation.
+
+For an existing project, use a Design when a consequential feature/redesign needs review of product intent, architecture, contracts, constraints, or trade-offs. Small/local work may go directly to a Change when the target state is already obvious.
+
+A Design PR:
+
+- uses `design/<design-id>`
+- targets `develop`
+- owns `docs/designs/<design-id>/DESIGN.md`
+- is intentionally mutable while `Proposed`
+- may evolve intent, architecture, scope, constraints, and target acceptance conditions
+- is accepted only by human confirmation of the exact final Design PR head
+
+The architect may stage `Status: Accepted` during final fold, but human approval/merge of that exact head is the effective acceptance boundary. Any later semantic push makes acceptance stale and requires human reconfirmation.
+
+One accepted Design may produce one or many Changes.
+
+### Change
+
+A Change answers:
+
+> What coherent transformation of current truth are we implementing now?
+
+A non-trivial Change:
+
+- uses `feature/<change-id>`
+- targets `develop`
+- owns `docs/changes/<change-id>/CHANGE.md`
+- has one coherent identity: **accepted intent + acceptance criteria + explicit non-negotiable constraints**
+
+A Change derived from a Design must bind to both:
+
+```text
+Design: docs/designs/<design-id>/DESIGN.md
+Design-Revision: <accepted-design-commit-sha>
+```
+
+Use the merged Git commit containing the accepted Design as the revision binding.
+
+Implementation strategy is not Change identity. Library choices, APIs, internal boundaries, polling vs webhook, and similar tactics may change inside the same PR while the accepted identity remains unchanged.
+
+If an accepted Design is revised, the architect must revalidate every incomplete Change mapped to it. Any continuing Change must durably rebind its `Design-Revision` to the newly accepted revision before work resumes. Restart a Change when its accepted identity is materially different.
+
+A small/local low-risk fix may omit `CHANGE.md` when no persistent coordination context is needed, but it must still preserve all affected current truth and Design mappings.
+
+### Source change
+
+Source changes are concrete modifications justified by a Change:
+
+- code
+- tests
+- migrations
+- configuration
+- module docs
+- current specs/architecture
+- Design realization mappings/index when affected
+
+Source changes do not have a separate planning identity.
 
 ## Roles and Runtimes
 
-Agent identities are roles, such as `architect`, `implementer`, or `reviewer`. Each configured role is described in `.agents/<role-id>.md`.
+Agent identities are roles such as `architect`, `implementer`, and `reviewer`, described in `.agents/<role-id>.md`.
 
-The runtime (model, vendor, or tool) that fulfills a role is assigned at invocation time and is not recorded in the repository. A role may be fulfilled by different runtimes in different sessions without changing this workflow.
-
-Role responsibility and runtime capability are separate. An agent acts only within the capabilities its runtime actually provides. When a required action is unavailable to the runtime (for example push, PR creation, review publishing, or merge), the agent hands that action to the human or another capable agent and keeps its lifecycle responsibility.
+The runtime/model/vendor fulfilling a role is invocation state and is not recorded in the repository. Role responsibility and runtime capability are separate. When a runtime cannot perform a required action, hand that action to a capable human/agent while preserving lifecycle ownership.
 
 ## Agent Bootstrap
 
-Agent identity (its role ID) must come from the execution environment or invocation prompt. The repository defines what that identity means.
+Agent identity must be explicit in the execution environment or invocation prompt. Do not guess it.
 
 Before working, every agent must read:
 
@@ -61,10 +179,12 @@ Before working, every agent must read:
 2. `AGENTS.md`
 3. `.agents/<its-role-id>.md`
 4. `docs/WORK_TRACKING.md`
-5. relevant current-state artifacts
-6. the relevant active change, if one exists
+5. `docs/status/CURRENT.md`
+6. relevant current specs/architecture/code/tests
+7. relevant Design(s), using `docs/designs/INDEX.md` for reverse lookup when useful
+8. the relevant active Change, if one exists
 
-If agent identity is not explicit, do not guess it.
+For a Design-derived Change, verify its `Design-Revision` before implementation/review.
 
 Do not rely on previous conversation history when repository artifacts exist.
 
@@ -75,10 +195,9 @@ Conversation context may be stale.
 A request such as `sync repo` means:
 
 1. refresh relevant repository state using available repository access
-2. re-read current rules and role if relevant
-3. inspect active changes and affected current-state artifacts
-4. inspect changed code/tests when needed
-5. continue from repository state, not remembered conversation state
+2. re-read workflow/role/tracking rules when relevant
+3. inspect current status, relevant Designs, active Changes, and affected current truth
+4. continue from repository state, not remembered conversation state
 
 If repository access is unavailable, say so rather than silently using stale context.
 
@@ -86,231 +205,263 @@ If repository access is unavailable, say so rather than silently using stale con
 
 ### `main` — stable
 
-- Stable, releasable current truth.
-- Active-change coordination artifacts are never introduced directly on `main`.
-- Changes reach `main` through a reviewed PR from `develop`.
-- Direct updates are reserved for explicit repository administration, bootstrap, or emergency repair by the human operator.
+- stable/releasable current truth
+- updated through reviewed PRs from `develop`
+- no active Change coordination artifacts are introduced directly
 
 ### `develop` — integration
 
-- Reviewed integration truth; may be ahead of `main`.
-- New feature branches start from the latest `develop`.
-- Feature branches merge back into `develop` through PR review.
+- reviewed integration truth
+- Design and feature branches start from latest `develop`
+- Design and Change PRs merge back through review
 
-### Feature branches
+### `design/<design-id>`
 
-- Named `feature/<change-id>` by default.
-- Carry the active `CHANGE.md`, branch-local status, implementation, tests, and current-truth updates for one change.
+- carries one target Design proposal
+- may evolve freely while under human design review
+- does not imply the proposed behavior exists
+- ends when the exact accepted Design head is merged into `develop`
+
+### `feature/<change-id>`
+
+- carries one implementation Change
+- includes implementation/tests/folded current-truth updates
+- if Design-derived, binds to an accepted Design revision
 
 ### Protected Branch Policy
 
-`main` and `develop` are protected integration branches. Implementers may edit, test, commit, push their own feature branch, and update its PR. Implementers must not:
+`main` and `develop` are protected integration branches. Agents may push their own Design/feature branches and update their PRs, but must not:
 
-- push directly to `main` or `develop`, or push any refspec whose destination is `main` or `develop`;
-- set `main` or `develop` as an upstream or push target;
-- bypass this policy with force, mirror, or all-branches pushes.
+- push directly to `main` or `develop`
+- target either branch with a push refspec
+- set either as a push/upstream target
+- bypass protection via force/mirror/all pushes
 
-Repository-host branch protection or rulesets are the authoritative enforcement of this policy. Both `main` and `develop` must require a pull request for updates and block force pushes and deletion, for every credential an agent runtime uses.
+Repository-host branch protection/rulesets are authoritative. Both branches must require pull requests and block force pushes/deletion for agent credentials. Agents verify protection; local hooks are convenience only.
 
-Agents verify that protection instead of reproducing it locally. If protection is missing or cannot be verified, record it as a human setup blocker in `docs/status/CURRENT.md` with the required configuration, and never claim the branches are protected. Agent tool hooks and local Git hooks are optional conveniences, not security boundaries.
+Missing or unverifiable protection is a human setup blocker.
 
-## Active Change Lifecycle
+## Design Realization and Traceability
 
-Use the lightest path that preserves transferable project state.
+Each Design that has implementation underway maintains a **Realization Map** containing:
+
+- derived Changes and their durable state
+- source areas
+- tests
+- current-truth docs
+
+Mapped source/test/doc areas are labeled `Target` or `Realized`.
+
+Every source change that moves, replaces, removes, or materially changes a mapped area must update **all affected Design Realization Maps** and `docs/designs/INDEX.md` before final review, regardless of whether the source change came from that Design, another Design, a direct Change, or a small fix.
+
+### Partial supersession
+
+A replacement Design does not supersede current realized mappings merely by becoming `Accepted` or `Implementing`.
+
+When replacement source for one area becomes real, update atomically in the same final reviewed head:
+
+1. implement replacement source
+2. mark replacement Design area `Realized`
+3. remove that realized area from/update/split the old Design
+4. switch the index mapping to the replacement Design
+
+A Design may remain `Implementing` overall while some areas are already `Realized`.
+
+### Design retention
+
+A fully implemented Design becomes `Status: Realized` and remains while it is useful as a current conceptual map.
+
+Remove it only when fully superseded or no longer needed to understand the current system. Before removal, move still-relevant knowledge into replacement Design/current architecture/spec/module docs. Do not create an archive copy.
+
+## Work Tracking and Folding
+
+Use the lightest artifact that preserves transferable state.
 
 ### Exploration
 
-Exploratory discussion stays in conversation until there is committed work, a durable decision, or cross-session follow-up.
+Exploration may stay in conversation until it creates accepted target intent, committed work, durable constraints, or cross-session follow-up.
 
-### Normal Change
+### Design fold
 
-For non-trivial committed work:
+Before a Design PR is ready for final human acceptance:
 
-`Explore → Active Change → Implement → Verify → Fold Current Truth → Remove Active Change → Merge`
+1. fold accepted review outcomes into the appropriate Design sections
+2. remove review-provenance/transient consolidation sections
+3. create/update an ADR only for cross-cutting rationale that must live independently
+4. stage final status/metadata
+5. push final Design head
+6. obtain human acceptance of that exact head
 
-An active change lives on its feature branch and normally needs only:
+### Change fold
 
-`docs/changes/<change-id>/CHANGE.md`
+Before an implementation Change is ready for final review:
 
-Before a completed feature merges into `develop`:
+1. satisfy acceptance criteria
+2. fold durable implemented truth into code/tests/module docs/specs/architecture
+3. update every affected Design Realization Map and index
+4. mark Design areas/status appropriately
+5. update an ADR only when cross-cutting rationale must survive independently
+6. make `docs/status/CURRENT.md` merge-safe
+7. remove completed `docs/changes/<change-id>/`
+8. push the final head
+9. run independent review/CI on that final head
 
-1. verify acceptance criteria;
-2. fold durable knowledge into the most appropriate current-truth surface;
-3. remove the active change artifact;
-4. make `docs/status/CURRENT.md` merge-safe (see Project Status): valid on `develop` after this merge and on `main` after `develop` is next merged into it;
-5. merge through PR review.
+Any push after a clean review makes the verdict stale and requires re-review.
 
-Add `DESIGN.md` only when the change is complex enough to benefit from it.
+## Durable Decisions and ADRs
 
-### Small Fix
+Default rationale belongs in the relevant Design.
 
-A small, local, low-risk fix may go directly to code + tests without a change artifact when no other human or agent needs persistent coordination context.
+Use an ADR only when a decision is cross-cutting, affects multiple Designs, or must live independently longer than the Design containing it.
 
-### Decision Escalation
-
-Do not hard-code approval gates into the lifecycle.
-
-Escalate to the human operator or configured higher authority when:
-
-- the decision exceeds the agent's configured authority
-- risk or uncertainty is material
-- requirements conflict
-- a consequential trade-off needs higher-authority judgment
-
-If future role policy grants greater authority to agents—or removes the human from a bounded workflow—the same operating model should continue without redesign.
-
-## Risk and Authority
-
-### Low Risk
-
-Examples: private helpers, local naming, implementation details, local refactoring.
-
-Agents may decide within their assigned authority.
-
-### Medium Risk
-
-Examples: internal APIs, module data structures, dependencies.
-
-Agents may proceed when their role permits it. Record only decisions that another agent or future session must know.
-
-### High Risk
-
-Examples: public contracts, persistence, core domain models, module boundaries, security-sensitive behavior, major architecture.
-
-Proceed only within assigned authority. Otherwise record the issue in the active change and escalate to the configured higher authority.
-
-## Durable Decisions
-
-Use an ADR only when the rationale remains useful after the implementation is complete.
-
-An ADR should answer a future question such as: "Why is the system intentionally designed this way?"
-
-Do not use ADRs as a changelog. Git is the changelog.
-
-When an accepted decision changes current behavior or architecture, update the corresponding `docs/specs/` or `docs/architecture/` artifact.
+ADR is not a changelog. Git is the changelog.
 
 ## Implementation Rules
 
-- Make the smallest change that satisfies the goal.
-- Preserve current contracts unless the change explicitly modifies them.
+- Make the smallest source change that satisfies the Change identity.
+- Preserve current contracts unless the accepted Design/Change modifies them.
 - Avoid unrelated refactoring.
 - Follow current repository patterns.
-- Add or update tests when behavior changes.
-- Update current-state documentation when behavior or architecture changes.
-- Surface uncertainty instead of silently inventing requirements.
-- Do not create process artifacts that exist only to compensate for temporary model limitations.
+- Add/update tests when behavior changes.
+- Update current-state documentation when implementation changes behavior/architecture.
+- Update every affected Design mapping/index when mapped areas change.
+- Surface uncertainty instead of inventing requirements.
+- Do not create process artifacts solely to compensate for temporary model limitations.
 
 ## Pull Request Ownership
 
-When work uses a pull request, the assigned implementer owns it until handoff or merge.
+### Design PR
 
-PR ownership is lifecycle responsibility, not a guarantee of repository-host permissions. Within its runtime capabilities and authority, the implementer should:
+The architect owns Design convergence until accepted/merged:
 
-- keep the PR scoped to the active change
-- respond to actionable review feedback
-- address relevant CI failures
-- update tests and current-state documentation when needed
-- push follow-up fixes to the same PR when supported
+- answers design comments
+- revises the Design
+- folds accepted decisions
+- ensures final head represents exactly what the human accepts
 
-If the runtime cannot push, create or update the PR, or read feedback, the implementer hands that specific action to the human or another capable agent and remains the owner.
+### Change PR
 
-PR comments coordinate work; durable outcomes must be reflected in repository state before merge.
+The implementer owns the Change PR until handoff/merge:
+
+- keeps the PR scoped to one Change identity
+- implements/tests/pushes
+- consumes actionable reviewer/CI/human feedback
+- updates current truth and Design mappings
+- performs final fold before requesting final review
+
+PR ownership is lifecycle responsibility, not a guarantee of repository-host permissions.
 
 ## Autonomous Change Execution
 
-Once the human finalizes a change intent and the architect materializes the active change on a feature branch, the default path needs no further human coordination until the PR is ready for human merge review:
+Once a Change identity is accepted and materialized:
 
 ```text
-implementer takes ownership
+implementer owns Change
         ↓
-implement → test → commit → push feature branch
+implement → test → push
         ↓
-create/update PR targeting develop
+reviewer / CI
         ↓
-reviewer runs; CI runs
-        ↓
-actionable findings or failures? ── yes → implementer fixes, commits, pushes ─┐
-        │ no                                                                   │
-        ↓                                                                      │
-final verification ←───────────────────────────────────────────────────────────┘
+findings? ── yes → fix → test → push ─┐
+        │ no                            │
+        ↓                               │
+fold all durable truth + mappings       │
+        ↓                               │
+remove CHANGE.md                        │
+        ↓                               │
+push final HEAD                         │
+        ↓                               │
+reviewer / CI on final HEAD ←───────────┘
         ↓
 ready-for-human-merge
 ```
 
-- The terminal state is `ready-for-human-merge`. Agents do not merge into `develop` or `main` unless their configured authority explicitly allows it.
-- Human attention is requested only for ambiguity, consequential decisions, authority limits, blocked credentials or infrastructure, and the final merge decision.
-- Automated review, CI, and human PR comments are all feedback. The implementer consumes them when its runtime supports it and iterates until the PR is clean or an issue exceeds its authority or capability.
-- Actionable human feedback that preserves the accepted intent and scope reopens the same loop: sync feedback → implement → test → push → re-verify.
-- Human feedback that materially changes the intent, acceptance criteria, architecture, or scope ends the current change: close the PR without merging and start a new change, feature branch, and PR from the appropriate integration baseline. The new change states its intent and acceptance criteria explicitly and may carry forward only still-valid artifacts such as regression tests, reusable implementation, or verified findings. The closed PR is historical evidence, not current truth.
-- If it is unclear whether feedback is a refinement or a new change, escalate rather than silently expanding scope.
+The implementer never self-certifies clean review. The reviewer owns the latest-head verdict.
 
-### Runtime Credentials
+Human feedback that preserves Change identity stays in the same PR. Feedback that changes the accepted identity requires a replacement Change. If it also changes accepted target Design, revise/accept the Design first, then derive/revalidate Changes.
 
-- An implementer runtime may use a repository-scoped credential to push its feature branch and create or update its PR.
-- Credentials are never stored in repository files.
-- Branch policy must prevent that credential or runtime from updating `main` or `develop` directly; repository-host branch protection is the authoritative layer.
+Runtime-specific PR watchers/autofix/review triggers are optional accelerators, not protocol semantics.
 
 ## Review Rules
 
-Review against:
+### Design review
 
-1. active change goal and acceptance criteria
-2. current specs and architecture
-3. relevant ADRs
-4. correctness and compatibility
-5. tests
-6. unnecessary complexity
+Review whether the target state is coherent, understandable, decomposable, and acceptable. Intent/architecture/scope may evolve until exact-head human acceptance.
 
-Reviewers should identify actionable problems before rewriting implementation unless explicitly assigned to fix them.
+### Change review
 
-Publishing findings as a PR review or comment is preferred. If the reviewer's runtime cannot write to the PR, returning the findings to the invoking human or agent is a valid fallback; a transport failure alone does not invalidate a completed review.
+Review the final head against:
+
+1. Change goal, acceptance criteria, and constraints
+2. bound accepted Design revision, when applicable
+3. current implemented truth and compatibility
+4. relevant cross-cutting ADRs
+5. correctness/security
+6. tests
+7. Design Realization Map/index correctness
+8. unnecessary complexity
+
+If the head changes after a clean verdict, re-review.
+
+## Risk and Authority
+
+Escalate when:
+
+- a decision exceeds role authority
+- risk/uncertainty is material
+- requirements conflict
+- a consequential trade-off needs higher authority
+- accepted Design identity must change
+
+Do not add fixed approval gates beyond actual authority boundaries.
 
 ## Project Status
 
 `docs/status/CURRENT.md` is the operator dashboard, not a historical report.
 
-It should make it possible for a human replacement to quickly answer:
+It should answer:
 
-- What is the project trying to do now?
-- What active changes exist?
-- What is blocked or risky?
+- What is the project doing now?
+- Which Designs matter and what state are they in?
+- What active Changes exist?
+- What is blocked/risky?
 - What requires human attention?
-- What should happen next?
-
-Derive status from repository evidence. Do not infer it from chat history. Do not maintain status archives by default; Git preserves prior versions.
+- What is next?
 
 ### Merge-safe status
 
-`CURRENT.md` holds durable current truth, not merge coordination state. Content that merges into a protected branch must already be true on that branch after the merge, so merging alone never makes status stale.
+Content merged into a protected branch must already describe durable truth after the merge and remain valid after the next `develop` → `main` merge.
 
-- On a feature branch, status may name that branch's active change. Before the branch merges into `develop`, rewrite status to what will be true on `develop` after the merge.
-- On `develop` and `main`, status describes the project as integrated. It must not depend on which of the two branches holds it, so a `develop` → `main` merge leaves it valid on `main`.
-- Transient lifecycle state does not belong in `CURRENT.md`: PR readiness, pending review, pending merge or release, how far one branch is ahead of or behind another (for example "`main` is still on the previous version"), or "merge/release X next". Record it in the active change or the PR.
+Do not put transient coordination in `CURRENT.md`:
 
-Before merging, check each statement: would it become false solely because this merge, or the next `develop` → `main` merge, happened? If so, rewrite it as durable truth or move it to the PR or active change.
+- pending PR review
+- PR readiness
+- pending merge/release
+- branch ahead/behind
+- "main is still on the previous version"
+
+Put those in the PR or active Design/Change.
 
 ## Human Handoff Requirement
 
-A replacement human should be able to take over by reading repository state without needing previous conversations.
+A replacement human/agent should be able to reconstruct the project by reading the repository alone.
 
-Optimize documentation for current understanding, not historical narration.
-
-If a handoff requires reconstructing old chats, the repository state is incomplete.
-
-## Agent Communication
-
-Agents communicate durable state through repository artifacts: current specs, architecture, active changes, ADRs, code, tests, commits, PRs, reviews, and CI results.
-
-Never assume another agent has access to your conversation history.
+If handoff requires old chats, project state is incomplete.
 
 ## Conflict Priority
 
-When instructions conflict, use this order:
+When instructions conflict, use:
 
-`Human explicit decision → current specs/architecture → relevant ADR → active change → WORKFLOW.md → agent judgment`
+`Human explicit decision → accepted Design revision for target behavior → current specs/architecture/code for implemented behavior → cross-cutting ADR → active Change → WORKFLOW.md → agent judgment`
 
-Role authority is a permission boundary, not a competing source of truth. If a conflict cannot be resolved within authority, escalate rather than guess.
+A Design describes target intent; current implementation evidence describes what exists now. Do not confuse them.
 
 ## Core Principle
 
-Keep the working tree optimized for understanding **what is true now** and **what is changing now**. Let Git preserve what happened before.
+Keep the repository optimized for answering three questions quickly:
+
+1. **What exists now?**
+2. **What have we accepted to become?**
+3. **What coherent transformation is active now?**
+
+Let Git preserve what happened before.

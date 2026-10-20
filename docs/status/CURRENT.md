@@ -1,36 +1,40 @@
 # ai-workflow — Current Project State
 
-Updated: 2026-10-19
+Updated: 2026-10-20
 
 ## Current Objective
 
-Adopt the accepted `Design → Change → Source change` lifecycle model as the target protocol design. Protocol implementation has not started yet.
+Stabilize protocol v3 after implementing the accepted Design → Change → Source lifecycle, then add CI/required-check automation before starting a consumer project.
 
-## Active Designs
+## Designs
 
-- `docs/designs/design-change-source-lifecycle/DESIGN.md` — Accepted target-state design.
+- `docs/designs/design-change-source-lifecycle/DESIGN.md` — Realized; maps the protocol-v3 lifecycle implementation.
 
 ## Active Changes
 
-- None. Implementation Changes will be derived from the accepted Design after it is integrated.
+- None.
 
 ## Human Attention
 
-- None required for design content. Human merge of the exact final Design PR head is the acceptance confirmation boundary.
+- None.
 
 ## Blockers / Risks
 
-- The accepted Design is target/planning truth, not evidence that the protocol implementation already supports `docs/designs/`, Design revisions, Realization Maps, or the new branch semantics.
+- CI required checks are not yet implemented, so latest-head test/review evidence is not yet enforced automatically by GitHub checks.
+- Semantic migration tooling for existing v1/v2 projects is still planned.
 
 ## Next
 
-- Derive one or more implementation Changes from the accepted Design.
-- Keep each Change bound to the accepted Design revision it implements.
+- Implement CI / required checks for core tests and final-head merge readiness.
+- Implement semantic migration tooling after CI is established.
 
 ## Current Truth References
 
+- Protocol contract: `spec/SPEC.md`
+- Workflow: `WORKFLOW.md`
+- Design traceability: `docs/designs/INDEX.md`
+- Designs: `docs/designs/`
+- Active changes: `docs/changes/`
 - Current specs: `docs/specs/`
 - Current architecture: `docs/architecture/`
-- Accepted target designs: `docs/designs/`
-- Active implementation changes: `docs/changes/`
-- Durable cross-cutting decisions: `docs/adr/`
+- Cross-cutting decisions: `docs/adr/`

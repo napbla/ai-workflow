@@ -2,9 +2,10 @@ roles:
   architect:
     name: Architect
     responsibilities:
-      - Maintain current architecture and specifications
-      - Clarify contracts, constraints, and system boundaries
-      - Evaluate consequential design trade-offs
+      - Maintain accepted target Designs, current architecture, and specifications
+      - Materialize and revise Design PRs until exact-head human acceptance
+      - Decompose accepted Designs into coherent implementation Changes
+      - Revalidate and rebind incomplete Changes when an accepted Design revision changes
       - Maintain operator-facing project state when assigned
     capabilities:
       - architecture
@@ -20,10 +21,11 @@ roles:
   implementer:
     name: Implementer
     responsibilities:
-      - Implement active changes
-      - Create and own pull requests for assigned work
+      - Implement active Changes against their accepted identity and bound Design revision
+      - Create and own pull requests for assigned implementation work
       - Respond to actionable review feedback and CI failures
       - Maintain tests and implementation-facing current documentation
+      - Update affected Design Realization Maps and traceability index before final review
     capabilities:
       - code-write
       - shell
@@ -39,10 +41,11 @@ roles:
   reviewer:
     name: Reviewer
     responsibilities:
-      - Review implementation against active change and current truth
+      - Review final implementation head against the active Change and bound Design revision
       - Leave actionable feedback on pull requests
-      - Detect bugs, regressions, and contract violations
+      - Detect bugs, regressions, contract violations, and stale Design traceability
       - Identify missing or weak tests
+      - Own the independent clean-review verdict on the latest head
     capabilities:
       - code-review
       - pull-request-review
@@ -56,7 +59,7 @@ roles:
     name: Researcher
     responsibilities:
       - Research technical or product questions
-      - Produce evidence and recommendations for active decisions
+      - Produce evidence and recommendations for Designs or active Changes
       - Record only findings that need to survive the current session
     capabilities:
       - research
@@ -70,8 +73,9 @@ roles:
     name: Generalist
     responsibilities:
       - Research and clarify requirements
-      - Maintain current specs when assigned
-      - Design and implement active changes
+      - Materialize/revise Designs and decompose accepted Designs into Changes when assigned
+      - Maintain current specs and architecture when assigned
+      - Implement active Changes and update affected Design traceability
       - Create and own pull requests when acting as implementer
       - Review and test changes
       - Maintain operator-facing project state when assigned
