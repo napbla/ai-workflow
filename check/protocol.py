@@ -127,18 +127,25 @@ def unfenced_lines(text: str) -> list[str]:
             result.append("")
             continue
 
+        # Markdown indented code is code before HTML parsing. Do not let a
+        # literal indented <!-- start a comment that hides later structure.
+        if raw_line.startswith("    ") or raw_line.startswith("\t"):
+            result.append("")
+            continue
+
         line, in_comment = _strip_html_comments(raw_line, in_comment)
         if in_comment and not line:
             result.append("")
             continue
 
-        if line.startswith("    ") or line.startswith("\t"):
-            result.append("")
-            continue
-
         opening = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
         if opening:
-            marker = opening.group(1)
+            marker, info = opening.groups()
+            # CommonMark forbids backticks in an info string for a backtick
+            # fence. Tilde-fence info strings do not have that restriction.
+            if marker[0] == "`" and "`" in info:
+                result.append(line)
+                continue
             in_fence = True
             fence_char = marker[0]
             fence_len = len(marker)
@@ -162,8 +169,11 @@ def metadata_text(text: str) -> str:
 def section_lines(text: str, heading: str) -> list[str] | None:
     lines = unfenced_lines(text)
     start: int | None = None
+    heading_re = re.compile(r"^ {0,3}" + re.escape(heading) + r"[ \t]*$")
+    level_two_re = re.compile(r"^ {0,3}##(?:[ \t]+|$)")
+
     for index, line in enumerate(lines):
-        if line.strip() == heading:
+        if heading_re.match(line):
             start = index + 1
             break
     if start is None:
@@ -171,7 +181,7 @@ def section_lines(text: str, heading: str) -> list[str] | None:
 
     section: list[str] = []
     for line in lines[start:]:
-        if line.startswith("## "):
+        if level_two_re.match(line):
             break
         section.append(line)
     return section
